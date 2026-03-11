@@ -1,14 +1,129 @@
 // ============================================
+// Types
+// ============================================
+
+/** Supported marketplace identifiers */
+export type MarketplaceType = 'SHOPEE' | 'AMAZON' | 'MERCADOLIVRE' | 'MAGALU' | 'ALIEXPRESS';
+
+/** Promo lifecycle status */
+export type PromoStatusType = 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
+
+/** Product data from a marketplace */
+export interface Product {
+  id: string;
+  name: string;
+  originalPrice: number;
+  promoPrice: number;
+  discountPercent: number;
+  imageUrl: string;
+  productUrl: string;
+  marketplace: MarketplaceType;
+  category?: string;
+  rating?: number;
+  soldCount?: number;
+  metadata?: Record<string, unknown>;
+}
+
+/** Input data for promo creation */
+export interface PromoData {
+  product: Product;
+  affiliateUrl: string;
+  copyVariations: CopyVariation[];
+  imageUrl: string;
+  marketplace: MarketplaceType;
+  generatedAt: Date;
+}
+
+/** AI-generated copy variation */
+export interface CopyVariation {
+  label: string;
+  text: string;
+  tone: 'urgente' | 'casual' | 'formal';
+  charCount: number;
+}
+
+/** Result from marketplace search */
+export interface MarketplaceSearchResult {
+  products: Product[];
+  total: number;
+  marketplace: MarketplaceType;
+  query: string;
+  fetchedAt: Date;
+}
+
+// ============================================
 // Constants
 // ============================================
 
-/** Janela de horário permitida para envio (BRT = UTC-3) */
+/** Configuration per marketplace: rate limits, base URLs, affiliate patterns */
+export const MARKETPLACE_CONFIGS: Record<MarketplaceType, {
+  name: string;
+  baseUrl: string;
+  affiliateBaseUrl: string;
+  rateLimit: { maxRequests: number; windowMs: number };
+  urlPatterns: RegExp[];
+}> = {
+  SHOPEE: {
+    name: 'Shopee',
+    baseUrl: 'https://shopee.com.br',
+    affiliateBaseUrl: 'https://affiliate.shopee.com.br',
+    rateLimit: { maxRequests: 100, windowMs: 60_000 },
+    urlPatterns: [
+      /shopee\.com\.br/i,
+      /shp\.ee/i,
+    ],
+  },
+  AMAZON: {
+    name: 'Amazon',
+    baseUrl: 'https://www.amazon.com.br',
+    affiliateBaseUrl: 'https://associados.amazon.com.br',
+    rateLimit: { maxRequests: 1, windowMs: 1_000 },
+    urlPatterns: [
+      /amazon\.com\.br/i,
+      /amzn\.to/i,
+      /a\.co/i,
+    ],
+  },
+  MERCADOLIVRE: {
+    name: 'Mercado Livre',
+    baseUrl: 'https://www.mercadolivre.com.br',
+    affiliateBaseUrl: 'https://www.mercadolivre.com.br/afiliados',
+    rateLimit: { maxRequests: 10, windowMs: 1_000 },
+    urlPatterns: [
+      /mercadolivre\.com\.br/i,
+      /mercadolibre\.com/i,
+      /produto\.mercadolivre/i,
+    ],
+  },
+  MAGALU: {
+    name: 'Magazine Luiza',
+    baseUrl: 'https://www.magazineluiza.com.br',
+    affiliateBaseUrl: 'https://www.lomadee.com',
+    rateLimit: { maxRequests: 1, windowMs: 1_000 },
+    urlPatterns: [
+      /magazineluiza\.com\.br/i,
+      /magalu\.com/i,
+    ],
+  },
+  ALIEXPRESS: {
+    name: 'AliExpress',
+    baseUrl: 'https://pt.aliexpress.com',
+    affiliateBaseUrl: 'https://portals.aliexpress.com',
+    rateLimit: { maxRequests: 30, windowMs: 60_000 },
+    urlPatterns: [
+      /aliexpress\.com/i,
+      /s\.click\.aliexpress/i,
+    ],
+  },
+};
+
+/** Janela de horario permitida para envio (BRT = UTC-3) */
 export const DISPATCH_WINDOWS = [
   { start: 9, end: 12 },  // 09-12h
   { start: 14, end: 18 }, // 14-18h
 ] as const;
 
-/** Warm-up schedule: dia → limites */
+/** Warm-up schedule: dia -> limites */
 export const WARMUP_SCHEDULE: Record<number, { maxMsgs: number; maxGroups: number; delayMinMs: number; delayMaxMs: number }> = {
   0: { maxMsgs: 0, maxGroups: 0, delayMinMs: 0, delayMaxMs: 0 },
   1: { maxMsgs: 10, maxGroups: 3, delayMinMs: 300_000, delayMaxMs: 600_000 },
@@ -50,7 +165,7 @@ export const QUEUES = {
 } as const;
 
 // ============================================
-// Types
+// Dispatch Types
 // ============================================
 
 export interface DispatchJobData {
@@ -77,8 +192,49 @@ export interface WaSessionHealth {
 }
 
 // ============================================
-// Helpers
+// Utils
 // ============================================
+
+/**
+ * Detects the marketplace from a product URL.
+ * @param url - The product URL to analyze
+ * @returns The detected marketplace or null if no match
+ */
+export function detectMarketplace(url: string): MarketplaceType | null {
+  for (const [marketplace, config] of Object.entries(MARKETPLACE_CONFIGS)) {
+    for (const pattern of config.urlPatterns) {
+      if (pattern.test(url)) {
+        return marketplace as MarketplaceType;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Formats a numeric value as BRL currency string.
+ * @param value - The price value in BRL
+ * @returns Formatted string like "R$ 29,90"
+ */
+export function formatPrice(value: number): string {
+  return `R$ ${value.toFixed(2).replace('.', ',')}`;
+}
+
+/**
+ * Generates a URL-safe slug from a name string.
+ * @param name - The name to slugify
+ * @returns Lowercase slug with hyphens (e.g. "fone-bluetooth-jbl")
+ */
+export function generateSlug(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')  // remove accents
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')    // remove special chars
+    .replace(/\s+/g, '-')            // spaces to hyphens
+    .replace(/-+/g, '-')             // collapse multiple hyphens
+    .replace(/^-|-$/g, '');          // trim leading/trailing hyphens
+}
 
 /** Check if current time is within dispatch window (BRT) */
 export function isWithinDispatchWindow(now: Date = new Date()): boolean {

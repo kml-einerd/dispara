@@ -1,43 +1,97 @@
+import './types.js';
+
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import jwt from '@fastify/jwt';
+import rateLimit from '@fastify/rate-limit';
 import fastifyWebSocket from '@fastify/websocket';
-import { PrismaClient } from '@prisma/client';
-import Redis from 'ioredis';
-import pino from 'pino';
+import { promoRoutes } from './modules/promos/routes.js';
+import { healthRoutes } from './modules/health/routes.js';
+import { waSessionRoutes } from './modules/wa-sessions/routes.js';
+import { groupRoutes } from './modules/groups/routes.js';
+import { dispatchRoutes } from './modules/dispatches/routes.js';
+import { tenantMiddleware } from './middleware/tenant.js';
+import { errorHandler } from './middleware/error-handler.js';
+import { WebSocketGateway } from './plugins/websocket-gateway.js';
+import { prisma } from './lib/prisma.js';
+import { redis } from './lib/redis.js';
+import { getWaSessionManager } from '@promospot/wa-manager';
 
-const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
+const app = Fastify({
+  logger: {
+    level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+  },
+});
 
-const prisma = new PrismaClient();
-const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
-
-const app = Fastify({ logger: true });
-
-// Plugins
-await app.register(cors, { origin: true });
-await app.register(fastifyWebSocket);
-
-// Decorate with shared instances
+// ── Decorators ──
+app.decorateRequest('tenantId', '');
+app.decorateRequest('userId', '');
 app.decorate('prisma', prisma);
 app.decorate('redis', redis);
 
-// Health check
-app.get('/health', async () => ({
-  status: 'ok',
-  timestamp: new Date().toISOString(),
-  uptime: process.uptime(),
-}));
+// ── Plugins ──
+await app.register(cors, { origin: true });
+await app.register(jwt, { secret: process.env.JWT_SECRET || 'dev-secret' });
+await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
+await app.register(fastifyWebSocket);
 
-// Register route modules
-// These will be added in FASE 1-4
-// await app.register(waSessionRoutes, { prefix: '/v1/wa/sessions' });
-// await app.register(groupRoutes, { prefix: '/v1/groups' });
-// await app.register(dispatchRoutes, { prefix: '/v1/dispatches' });
+// ── WebSocket Gateway ──
+const wsGateway = new WebSocketGateway(app);
+await wsGateway.register();
+app.decorate('wsGateway', wsGateway);
 
-// Graceful shutdown
+// ── WA Manager event forwarding to WebSocket ──
+const waManager = getWaSessionManager();
+app.decorate('waManager', waManager);
+
+waManager.on('qr', ({ sessionId, tenantId, qr }) => {
+  wsGateway.broadcastQR(sessionId, tenantId, qr);
+});
+
+waManager.on('connected', ({ sessionId, tenantId }) => {
+  wsGateway.broadcastSessionHealth(sessionId, tenantId, {
+    status: 'CONNECTED',
+    healthScore: 100,
+    dailyMsgCount: 0,
+  });
+});
+
+waManager.on('disconnected', ({ sessionId, tenantId, reason }) => {
+  wsGateway.broadcastSessionHealth(sessionId, tenantId, {
+    status: 'DISCONNECTED',
+    healthScore: 0,
+    dailyMsgCount: 0,
+  });
+});
+
+waManager.on('banned', ({ sessionId, tenantId }) => {
+  wsGateway.broadcastSessionHealth(sessionId, tenantId, {
+    status: 'BANNED',
+    healthScore: 0,
+    dailyMsgCount: 0,
+  });
+});
+
+// ── Global hooks ──
+app.addHook('onRequest', tenantMiddleware);
+
+// ── Error handler ──
+app.setErrorHandler(errorHandler);
+
+// ── Routes ──
+await app.register(healthRoutes, { prefix: '/v1/health' });
+await app.register(promoRoutes, { prefix: '/v1/promos' });
+await app.register(waSessionRoutes, { prefix: '/v1/wa/sessions' });
+await app.register(groupRoutes, { prefix: '/v1/groups' });
+await app.register(dispatchRoutes, { prefix: '/v1/dispatches' });
+
+// ── Graceful shutdown ──
 const signals = ['SIGTERM', 'SIGINT'] as const;
 for (const signal of signals) {
   process.on(signal, async () => {
-    logger.info(`Received ${signal}, shutting down...`);
+    app.log.info(`Received ${signal}, shutting down gracefully...`);
+    wsGateway.shutdown();
+    await waManager.disconnectAll();
     await app.close();
     await prisma.$disconnect();
     redis.disconnect();
@@ -45,22 +99,16 @@ for (const signal of signals) {
   });
 }
 
-// Start
-const port = Number(process.env.API_PORT ?? 3001);
-const host = process.env.API_HOST ?? '0.0.0.0';
+// ── Start ──
+const port = Number(process.env.API_PORT) || 3001;
+const host = process.env.API_HOST || '0.0.0.0';
 
 try {
   await app.listen({ port, host });
-  logger.info(`PromoSpot API running on ${host}:${port}`);
+  app.log.info(`PromoSpot API v2 running on ${host}:${port}`);
 } catch (err) {
-  logger.error(err);
+  app.log.error(err);
   process.exit(1);
 }
 
-// Type augmentation for Fastify
-declare module 'fastify' {
-  interface FastifyInstance {
-    prisma: PrismaClient;
-    redis: Redis;
-  }
-}
+export { app };
