@@ -1,0 +1,187 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// Multi-tenant base
+// ============================================
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  plan      String   @default("free") // free, pro, enterprise
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  waSessions  WaSession[]
+  waGroups    WaGroup[]
+  dispatches  Dispatch[]
+
+  @@map("tenants")
+}
+
+// ============================================
+// WhatsApp Sessions
+// ============================================
+
+enum WaSessionStatus {
+  CONNECTING
+  CONNECTED
+  DISCONNECTED
+  BANNED
+  QUARANTINE
+}
+
+model WaSession {
+  id            String          @id @default(uuid())
+  tenantId      String          @map("tenant_id")
+  phoneNumber   String          @map("phone_number")
+  name          String          @default("")
+  status        WaSessionStatus @default(CONNECTING)
+  healthScore   Int             @default(100) @map("health_score") // 0-100
+  warmupDay     Int             @default(0) @map("warmup_day") // days since first connect
+  firstConnAt   DateTime?       @map("first_conn_at")
+  lastConnAt    DateTime?       @map("last_conn_at")
+  lastDisconnAt DateTime?       @map("last_disconn_at")
+  dailyMsgCount Int             @default(0) @map("daily_msg_count")
+  dailyMsgReset DateTime?       @map("daily_msg_reset") // when to reset daily count
+  browserTuple  String          @default("") @map("browser_tuple") // fingerprint
+  authState     Json?           @map("auth_state") // Baileys creds (encrypted)
+  metadata      Json?           // extra config
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  groups        WaGroup[]
+  dispatchItems DispatchItem[]
+
+  @@unique([tenantId, phoneNumber])
+  @@index([tenantId, status])
+  @@map("wa_sessions")
+}
+
+// ============================================
+// WhatsApp Groups
+// ============================================
+
+model WaGroup {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  sessionId     String    @map("session_id")
+  waGroupId     String    @map("wa_group_id") // WhatsApp JID
+  name          String
+  description   String    @default("")
+  memberCount   Int       @default(0) @map("member_count")
+  maxMembers    Int       @default(1024) @map("max_members")
+  inviteCode    String?   @map("invite_code")
+  isActive      Boolean   @default(true) @map("is_active") // enabled for dispatches
+  msgsSent      Int       @default(0) @map("msgs_sent")
+  lastDispatch  DateTime? @map("last_dispatch")
+  metadata      Json?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  session       WaSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  dispatchItems DispatchItem[]
+
+  @@unique([tenantId, waGroupId])
+  @@index([tenantId, isActive])
+  @@index([sessionId])
+  @@map("wa_groups")
+}
+
+// ============================================
+// Dispatches (disparos)
+// ============================================
+
+enum DispatchStatus {
+  PENDING     // agendado, aguardando
+  PROCESSING  // em andamento
+  COMPLETED   // todos os items enviados
+  PARTIAL     // alguns falharam
+  FAILED      // todos falharam
+  CANCELLED   // cancelado pelo usuário
+}
+
+model Dispatch {
+  id            String         @id @default(uuid())
+  tenantId      String         @map("tenant_id")
+  promoId       String?        @map("promo_id") // referência à promo (FASE 1)
+  copyTemplate  String         @map("copy_template") // template com spintax
+  mediaUrl      String?        @map("media_url")
+  mediaType     String?        @map("media_type") // image, video, document
+  status        DispatchStatus @default(PENDING)
+  priority      Int            @default(0) // 0=normal, 1=high
+  scheduledAt   DateTime?      @map("scheduled_at") // null = imediato
+  startedAt     DateTime?      @map("started_at")
+  completedAt   DateTime?      @map("completed_at")
+  totalGroups   Int            @default(0) @map("total_groups")
+  sentCount     Int            @default(0) @map("sent_count")
+  failedCount   Int            @default(0) @map("failed_count")
+  metadata      Json?
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items         DispatchItem[]
+
+  @@index([tenantId, status])
+  @@index([scheduledAt])
+  @@map("dispatches")
+}
+
+enum DispatchItemStatus {
+  PENDING
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+model DispatchItem {
+  id            String             @id @default(uuid())
+  dispatchId    String             @map("dispatch_id")
+  groupId       String             @map("group_id")
+  sessionId     String?            @map("session_id") // número usado para enviar
+  copyRendered  String?            @map("copy_rendered") // copy após spintax
+  status        DispatchItemStatus @default(PENDING)
+  attempts      Int                @default(0)
+  lastError     String?            @map("last_error")
+  sentAt        DateTime?          @map("sent_at")
+  latencyMs     Int?               @map("latency_ms") // tempo total do envio
+  jobId         String?            @map("job_id") // BullMQ job ID
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+
+  dispatch      Dispatch           @relation(fields: [dispatchId], references: [id], onDelete: Cascade)
+  group         WaGroup            @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  session       WaSession?         @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([dispatchId, status])
+  @@index([groupId])
+  @@map("dispatch_items")
+}
+
+// ============================================
+// Circuit Breaker State
+// ============================================
+
+model CircuitBreakerState {
+  id            String   @id @default(uuid())
+  sessionId     String   @unique @map("session_id")
+  failureCount  Int      @default(0) @map("failure_count")
+  lastFailureAt DateTime? @map("last_failure_at")
+  openUntil     DateTime? @map("open_until") // paused until this time
+  state         String   @default("CLOSED") // CLOSED, OPEN, HALF_OPEN
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("circuit_breaker_states")
+}

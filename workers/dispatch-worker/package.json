@@ -1,0 +1,27 @@
+{
+  "name": "@promospot/dispatch-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/worker.ts",
+    "build": "tsc",
+    "start": "node dist/worker.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.4.0",
+    "@promospot/dispatch-engine": "*",
+    "@promospot/shared": "*",
+    "@promospot/wa-manager": "*",
+    "bullmq": "^5.34.0",
+    "ioredis": "^5.4.0",
+    "pino": "^9.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
