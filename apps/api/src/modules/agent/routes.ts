@@ -23,7 +23,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
         tenantId: request.tenantId,
         agentType: 'conversational',
         systemPrompt: input.systemPrompt ?? null,
-        model: input.model ?? 'claude-haiku-4-5-20251001',
+        model: input.model ?? 'claude-sonnet-4-6',
         temperature: input.temperature ?? 0.7,
         maxTokens: input.maxTokens ?? 1024,
         isActive: input.isActive ?? true,

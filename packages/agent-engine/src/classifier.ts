@@ -38,7 +38,7 @@ export class IntentClassifier {
 
   constructor(apiKey?: string, model?: string) {
     this.apiKey = apiKey ?? process.env['OPENROUTER_API_KEY'] ?? '';
-    this.model = model ?? 'anthropic/claude-haiku-4-5-20251001';
+    this.model = model ?? 'anthropic/claude-sonnet-4-6';
   }
 
   async classifyIntent(message: string): Promise<ClassificationResult> {

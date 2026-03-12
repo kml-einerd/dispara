@@ -343,7 +343,7 @@ model AgentConfig {
   tenantId     String             @map("tenant_id") @db.Uuid
   agentType    String             @map("agent_type") @db.VarChar(50)
   systemPrompt String?            @map("system_prompt")
-  model        String             @default("claude-haiku-4-5-20251001") @db.VarChar(100)
+  model        String             @default("claude-sonnet-4-6") @db.VarChar(100)
   temperature  Float              @default(0.7)
   maxTokens    Int                @default(1024) @map("max_tokens")
   isActive     Boolean            @default(true) @map("is_active")
