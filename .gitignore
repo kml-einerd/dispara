@@ -35,3 +35,4 @@ wa-sessions/
 .DS_Store
 Thumbs.db
 .github/workflows/
+.vercel

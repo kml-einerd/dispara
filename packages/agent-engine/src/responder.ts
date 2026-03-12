@@ -37,7 +37,7 @@ export class ConversationalResponder {
     const systemPrompt = this.buildSystemPrompt(config, products, intent);
 
     try {
-      const response = await fetch(OPENROUTER_URL, {
+      const res = await fetch(OPENROUTER_URL, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
@@ -53,6 +53,7 @@ export class ConversationalResponder {
           ],
         }),
       });
+      const response = res as unknown as { ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<unknown> };
 
       if (!response.ok) {
         const errorBody = await response.text();

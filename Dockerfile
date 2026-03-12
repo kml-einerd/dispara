@@ -15,17 +15,22 @@ COPY packages/promo-engine/package.json ./packages/promo-engine/
 COPY packages/marketplace/package.json ./packages/marketplace/
 COPY packages/telegram/package.json ./packages/telegram/
 COPY packages/wa-manager/package.json ./packages/wa-manager/
-RUN npm ci --omit=dev
+RUN npm ci
 
 # Build
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npx turbo run build --filter=api... --filter=dispatch-worker...
+RUN npx prisma generate --schema=apps/api/prisma/schema.prisma
+RUN npx turbo run build --filter=@dispara/api... --filter=@dispara/dispatch-worker...
+
+# Prune dev deps for production
+RUN npm prune --omit=dev
 
 # Production
 FROM base AS runner
-ENV NODE_ENV=production
+# NODE_ENV is set via env_file in docker-compose, not hardcoded here
+# Default to production but allow override via environment
 RUN addgroup --system --gid 1001 app && adduser --system --uid 1001 app
 
 COPY --from=builder --chown=app:app /app/node_modules ./node_modules
@@ -38,4 +43,4 @@ COPY --from=builder --chown=app:app /app/package.json ./
 
 USER app
 EXPOSE 3001
-CMD ["node", "apps/api/dist/index.js"]
+CMD ["node", "apps/api/dist/server.js"]

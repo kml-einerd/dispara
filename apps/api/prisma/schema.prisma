@@ -7,9 +7,515 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ============================================
-// Enums
-// ============================================
+model Tenant {
+  id                String             @id @default(uuid()) @db.Uuid
+  name              String             @db.VarChar(255)
+  slug              String             @unique @db.VarChar(100)
+  plan              Plan               @default(STARTER)
+  logoUrl           String?            @map("logo_url")
+  settings          Json?              @default("{}")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  affiliateAccounts AffiliateAccount[]
+  agentConfigs      AgentConfig[]
+  analyticsEvents   AnalyticsEvent[]
+  dispatches        Dispatch[]
+  groups            Group[]
+  linkSpots         LinkSpot[]
+  promoFeeds        PromoFeed[]
+  promos            Promo[]
+  subscriptions     Subscription[]
+  telegramBots      TelegramBot[]
+  usageMetrics      UsageMetric[]
+  users             User[]
+  waSessions        WaSession[]
+
+  @@map("tenants")
+}
+
+model User {
+  id                String             @id @default(uuid()) @db.Uuid
+  tenantId          String             @map("tenant_id") @db.Uuid
+  externalAuthId    String             @unique @map("external_auth_id") @db.VarChar(255)
+  email             String             @db.VarChar(255)
+  name              String             @db.VarChar(255)
+  avatarUrl         String?            @map("avatar_url")
+  role              UserRole           @default(MEMBER)
+  lastLoginAt       DateTime?          @map("last_login_at")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  agentInteractions AgentInteraction[]
+  dispatches        Dispatch[]
+  promos            Promo[]
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([externalAuthId])
+  @@map("users")
+}
+
+model AffiliateAccount {
+  id          String        @id @default(uuid()) @db.Uuid
+  tenantId    String        @map("tenant_id") @db.Uuid
+  marketplace Marketplace
+  label       String        @db.VarChar(255)
+  credentials Json
+  status      AccountStatus @default(ACTIVE)
+  lastSyncAt  DateTime?     @map("last_sync_at")
+  expiresAt   DateTime?     @map("expires_at")
+  metadata    Json?
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+  tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, marketplace, label])
+  @@index([tenantId, marketplace])
+  @@index([tenantId, status])
+  @@map("affiliate_accounts")
+}
+
+model WaSession {
+  id            String          @id @default(uuid()) @db.Uuid
+  tenantId      String          @map("tenant_id") @db.Uuid
+  phoneNumber   String          @map("phone_number") @db.VarChar(20)
+  name          String          @default("") @db.VarChar(255)
+  status        WaSessionStatus @default(DISCONNECTED)
+  healthScore   Int             @default(100) @map("health_score")
+  warmupDay     Int             @default(0) @map("warmup_day")
+  dailyMsgCount Int             @default(0) @map("daily_msg_count")
+  dailyMsgReset DateTime?       @map("daily_msg_reset")
+  firstConnAt   DateTime?       @map("first_conn_at")
+  lastConnAt    DateTime?       @map("last_conn_at")
+  authState     Json?           @map("auth_state")
+  metadata      Json?
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+  dispatchItems DispatchItem[]
+  groups        Group[]
+  authKeys      WaAuthKey[]
+  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, phoneNumber])
+  @@index([tenantId, status])
+  @@map("wa_sessions")
+}
+
+model WaAuthKey {
+  id        String    @id @default(uuid()) @db.Uuid
+  sessionId String    @map("session_id") @db.Uuid
+  keyType   String    @map("key_type") @db.VarChar(50)
+  keyId     String    @map("key_id") @db.VarChar(255)
+  value     Json
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  session   WaSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, keyType, keyId])
+  @@index([sessionId, keyType])
+  @@map("wa_auth_keys")
+}
+
+model Group {
+  id            String         @id @default(uuid()) @db.Uuid
+  tenantId      String         @map("tenant_id") @db.Uuid
+  sessionId     String         @map("session_id") @db.Uuid
+  channel       Channel        @default(WHATSAPP)
+  externalId    String         @map("external_id") @db.VarChar(255)
+  name          String         @db.VarChar(255)
+  description   String?
+  memberCount   Int            @default(0) @map("member_count")
+  maxMembers    Int            @default(1024) @map("max_members")
+  inviteLink    String?        @map("invite_link")
+  isActive      Boolean        @default(true) @map("is_active")
+  metadata      Json?
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  dispatchItems DispatchItem[]
+  members       GroupMember[]
+  session       WaSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, externalId])
+  @@index([tenantId, channel, isActive])
+  @@index([sessionId])
+  @@map("groups")
+}
+
+model GroupMember {
+  id          String   @id @default(uuid()) @db.Uuid
+  groupId     String   @map("group_id") @db.Uuid
+  externalId  String   @map("external_id") @db.VarChar(255)
+  displayName String?  @map("display_name") @db.VarChar(255)
+  isAdmin     Boolean  @default(false) @map("is_admin")
+  joinedAt    DateTime @default(now()) @map("joined_at")
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, externalId])
+  @@index([groupId])
+  @@map("group_members")
+}
+
+model Promo {
+  id              String           @id @default(uuid()) @db.Uuid
+  tenantId        String           @map("tenant_id") @db.Uuid
+  userId          String           @map("user_id") @db.Uuid
+  marketplace     Marketplace
+  productUrl      String           @map("product_url")
+  affiliateUrl    String           @map("affiliate_url")
+  productName     String           @map("product_name") @db.VarChar(500)
+  originalPrice   Decimal          @map("original_price") @db.Decimal(10, 2)
+  promoPrice      Decimal          @map("promo_price") @db.Decimal(10, 2)
+  discountPercent Int              @map("discount_percent")
+  imageUrl        String?          @map("image_url")
+  category        String?          @db.VarChar(255)
+  status          PromoStatus      @default(DRAFT)
+  metadata        Json?
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  dispatches      Dispatch[]
+  feedItems       PromoFeedItem[]
+  variations      PromoVariation[]
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([tenantId, marketplace])
+  @@index([tenantId, createdAt])
+  @@map("promos")
+}
+
+model PromoVariation {
+  id        String   @id @default(uuid()) @db.Uuid
+  promoId   String   @map("promo_id") @db.Uuid
+  label     String   @db.VarChar(100)
+  copyText  String   @map("copy_text")
+  imageUrl  String?  @map("image_url")
+  isDefault Boolean  @default(false) @map("is_default")
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  promo     Promo    @relation(fields: [promoId], references: [id], onDelete: Cascade)
+
+  @@index([promoId])
+  @@map("promo_variations")
+}
+
+model Dispatch {
+  id           String         @id @default(uuid()) @db.Uuid
+  tenantId     String         @map("tenant_id") @db.Uuid
+  userId       String         @map("user_id") @db.Uuid
+  promoId      String?        @map("promo_id") @db.Uuid
+  channel      Channel        @default(WHATSAPP)
+  copyTemplate String         @map("copy_template")
+  mediaUrl     String?        @map("media_url")
+  mediaType    String?        @map("media_type") @db.VarChar(50)
+  status       DispatchStatus @default(PENDING)
+  priority     Int            @default(0)
+  scheduledAt  DateTime?      @map("scheduled_at")
+  startedAt    DateTime?      @map("started_at")
+  completedAt  DateTime?      @map("completed_at")
+  totalGroups  Int            @default(0) @map("total_groups")
+  sentCount    Int            @default(0) @map("sent_count")
+  failedCount  Int            @default(0) @map("failed_count")
+  metadata     Json?
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+  items        DispatchItem[]
+  promo        Promo?         @relation(fields: [promoId], references: [id])
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@index([scheduledAt])
+  @@map("dispatches")
+}
+
+model DispatchItem {
+  id           String             @id @default(uuid()) @db.Uuid
+  dispatchId   String             @map("dispatch_id") @db.Uuid
+  groupId      String             @map("group_id") @db.Uuid
+  sessionId    String?            @map("session_id") @db.Uuid
+  copyRendered String?            @map("copy_rendered")
+  status       DispatchItemStatus @default(PENDING)
+  attempts     Int                @default(0)
+  lastError    String?            @map("last_error")
+  sentAt       DateTime?          @map("sent_at")
+  latencyMs    Int?               @map("latency_ms")
+  jobId        String?            @map("job_id") @db.VarChar(255)
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+  dispatch     Dispatch           @relation(fields: [dispatchId], references: [id], onDelete: Cascade)
+  group        Group              @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  session      WaSession?         @relation(fields: [sessionId], references: [id])
+
+  @@index([dispatchId, status])
+  @@index([groupId])
+  @@map("dispatch_items")
+}
+
+model PromoFeed {
+  id          String          @id @default(uuid()) @db.Uuid
+  tenantId    String          @map("tenant_id") @db.Uuid
+  name        String          @db.VarChar(255)
+  slug        String          @db.VarChar(100)
+  description String?
+  isActive    Boolean         @default(true) @map("is_active")
+  metadata    Json?
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+  items       PromoFeedItem[]
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, isActive])
+  @@map("promo_feeds")
+}
+
+model PromoFeedItem {
+  id        String    @id @default(uuid()) @db.Uuid
+  feedId    String    @map("feed_id") @db.Uuid
+  promoId   String    @map("promo_id") @db.Uuid
+  position  Int       @default(0)
+  pinnedAt  DateTime? @map("pinned_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  feed      PromoFeed @relation(fields: [feedId], references: [id], onDelete: Cascade)
+  promo     Promo     @relation(fields: [promoId], references: [id], onDelete: Cascade)
+
+  @@unique([feedId, promoId])
+  @@index([feedId, position])
+  @@map("promo_feed_items")
+}
+
+model LinkSpot {
+  id           String      @id @default(uuid()) @db.Uuid
+  tenantId     String      @map("tenant_id") @db.Uuid
+  shortCode    String      @unique @map("short_code") @db.VarChar(20)
+  targetUrl    String      @map("target_url")
+  affiliateUrl String      @map("affiliate_url")
+  clickCount   Int         @default(0) @map("click_count")
+  isActive     Boolean     @default(true) @map("is_active")
+  expiresAt    DateTime?   @map("expires_at")
+  metadata     Json?
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+  clicks       LinkClick[]
+  tenant       Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([shortCode])
+  @@index([tenantId, isActive])
+  @@map("link_spots")
+}
+
+model LinkClick {
+  id         String   @id @default(uuid()) @db.Uuid
+  linkSpotId String   @map("link_spot_id") @db.Uuid
+  ip         String?  @db.VarChar(45)
+  userAgent  String?  @map("user_agent")
+  referer    String?
+  country    String?  @db.VarChar(2)
+  city       String?  @db.VarChar(100)
+  createdAt  DateTime @default(now()) @map("created_at")
+  linkSpot   LinkSpot @relation(fields: [linkSpotId], references: [id], onDelete: Cascade)
+
+  @@index([linkSpotId, createdAt])
+  @@map("link_clicks")
+}
+
+model AnalyticsEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  eventType String   @map("event_type") @db.VarChar(100)
+  entityId  String?  @map("entity_id") @db.Uuid
+  payload   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, eventType, createdAt])
+  @@index([entityId])
+  @@map("analytics_events")
+}
+
+model AgentConfig {
+  id           String             @id @default(uuid()) @db.Uuid
+  tenantId     String             @map("tenant_id") @db.Uuid
+  agentType    String             @map("agent_type") @db.VarChar(50)
+  systemPrompt String?            @map("system_prompt")
+  model        String             @default("claude-haiku-4-5-20251001") @db.VarChar(100)
+  temperature  Float              @default(0.7)
+  maxTokens    Int                @default(1024) @map("max_tokens")
+  isActive     Boolean            @default(true) @map("is_active")
+  metadata     Json?
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  interactions AgentInteraction[]
+
+  @@unique([tenantId, agentType])
+  @@index([tenantId, isActive])
+  @@map("agent_configs")
+}
+
+model AgentInteraction {
+  id            String      @id @default(uuid()) @db.Uuid
+  agentConfigId String      @map("agent_config_id") @db.Uuid
+  userId        String      @map("user_id") @db.Uuid
+  inputPayload  Json        @map("input_payload")
+  outputPayload Json?       @map("output_payload")
+  tokenCount    Int?        @map("token_count")
+  latencyMs     Int?        @map("latency_ms")
+  success       Boolean     @default(true)
+  errorMessage  String?     @map("error_message")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  agentConfig   AgentConfig @relation(fields: [agentConfigId], references: [id], onDelete: Cascade)
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([agentConfigId, createdAt])
+  @@index([userId, createdAt])
+  @@map("agent_interactions")
+}
+
+model Subscription {
+  id                 String             @id @default(uuid()) @db.Uuid
+  tenantId           String             @map("tenant_id") @db.Uuid
+  planDefinitionId   String             @map("plan_definition_id") @db.Uuid
+  status             SubscriptionStatus @default(ACTIVE)
+  externalId         String?            @unique @map("external_id") @db.VarChar(255)
+  currentPeriodStart DateTime           @map("current_period_start")
+  currentPeriodEnd   DateTime           @map("current_period_end")
+  cancelledAt        DateTime?          @map("cancelled_at")
+  metadata           Json?
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+  planDefinition     PlanDefinition     @relation(fields: [planDefinitionId], references: [id])
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@map("subscriptions")
+}
+
+model PlanDefinition {
+  id             String         @id @default(uuid()) @db.Uuid
+  plan           Plan           @unique
+  name           String         @db.VarChar(100)
+  priceMonthly   Decimal        @map("price_monthly") @db.Decimal(10, 2)
+  priceYearly    Decimal?       @map("price_yearly") @db.Decimal(10, 2)
+  maxWaSessions  Int            @map("max_wa_sessions")
+  maxGroups      Int            @map("max_groups")
+  maxPromos      Int            @map("max_promos")
+  maxDispatches  Int            @map("max_dispatches")
+  aiCreditsMonth Int            @map("ai_credits_month")
+  features       Json?
+  isActive       Boolean        @default(true) @map("is_active")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+  subscriptions  Subscription[]
+
+  @@map("plan_definitions")
+}
+
+model UsageMetric {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  metricType  String   @map("metric_type") @db.VarChar(100)
+  value       Int      @default(0)
+  periodStart DateTime @map("period_start")
+  periodEnd   DateTime @map("period_end")
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, metricType, periodStart])
+  @@index([tenantId, metricType, periodStart])
+  @@map("usage_metrics")
+}
+
+model TelegramBot {
+  id          String            @id @default(uuid()) @db.Uuid
+  tenantId    String            @map("tenant_id") @db.Uuid
+  botToken    String            @map("bot_token")
+  botUsername String            @map("bot_username") @db.VarChar(255)
+  name        String            @default("") @db.VarChar(255)
+  isActive    Boolean           @default(true) @map("is_active")
+  webhookUrl  String?           @map("webhook_url")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  channels    TelegramChannel[]
+
+  @@unique([tenantId, botUsername])
+  @@index([tenantId, isActive])
+  @@map("telegram_bots")
+}
+
+model TelegramChannel {
+  id           String      @id @default(uuid()) @db.Uuid
+  tenantId     String      @map("tenant_id") @db.Uuid
+  botId        String      @map("bot_id") @db.Uuid
+  chatId       String      @map("chat_id") @db.VarChar(255)
+  name         String      @db.VarChar(255)
+  type         String      @default("channel") @db.VarChar(50)
+  memberCount  Int         @default(0) @map("member_count")
+  isActive     Boolean     @default(true) @map("is_active")
+  agentEnabled Boolean     @default(false) @map("agent_enabled")
+  lastDispatch DateTime?   @map("last_dispatch")
+  metadata     Json?
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+  bot          TelegramBot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, chatId])
+  @@index([tenantId, isActive])
+  @@index([botId])
+  @@map("telegram_channels")
+}
+
+model Product {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  name          String   @db.VarChar(500)
+  description   String   @default("")
+  category      String   @default("") @db.VarChar(255)
+  price         Float
+  originalPrice Float?   @map("original_price")
+  affiliateUrl  String   @map("affiliate_url")
+  imageUrl      String?  @map("image_url")
+  marketplace   String   @default("") @db.VarChar(50)
+  isActive      Boolean  @default(true) @map("is_active")
+  embedding     Float[]  @default([])
+  metadata      Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId, isActive])
+  @@index([tenantId, category])
+  @@index([tenantId, marketplace])
+  @@map("products")
+}
+
+model TelegramDispatchItem {
+  id         String                 @id @default(uuid()) @db.Uuid
+  dispatchId String                 @map("dispatch_id") @db.Uuid
+  channelId  String                 @map("channel_id") @db.Uuid
+  chatId     String                 @map("chat_id") @db.VarChar(255)
+  botId      String                 @map("bot_id") @db.Uuid
+  text       String
+  mediaUrl   String?                @map("media_url")
+  mediaType  String?                @map("media_type") @db.VarChar(50)
+  status     TelegramDispatchStatus @default(PENDING)
+  attempts   Int                    @default(0)
+  lastError  String?                @map("last_error")
+  sentAt     DateTime?              @map("sent_at")
+  jobId      String?                @map("job_id") @db.VarChar(255)
+  createdAt  DateTime               @default(now()) @map("created_at")
+  updatedAt  DateTime               @updatedAt @map("updated_at")
+
+  @@index([dispatchId, status])
+  @@index([channelId])
+  @@map("telegram_dispatch_items")
+}
 
 enum Plan {
   STARTER
@@ -76,589 +582,6 @@ enum SubscriptionStatus {
   CANCELLED
 }
 
-// ============================================
-// Multi-tenant base
-// ============================================
-
-model Tenant {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String   @db.VarChar(255)
-  slug      String   @unique @db.VarChar(100)
-  plan      Plan     @default(STARTER)
-  logoUrl   String?  @map("logo_url") @db.Text
-  settings  Json?    @default("{}")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  users             User[]
-  affiliateAccounts AffiliateAccount[]
-  waSessions        WaSession[]
-  groups            Group[]
-  promos            Promo[]
-  dispatches        Dispatch[]
-  promoFeeds        PromoFeed[]
-  linkSpots         LinkSpot[]
-  analyticsEvents   AnalyticsEvent[]
-  agentConfigs      AgentConfig[]
-  subscriptions     Subscription[]
-  usageMetrics      UsageMetric[]
-  telegramBots      TelegramBot[]
-
-  @@map("tenants")
-}
-
-// ============================================
-// Users
-// ============================================
-
-model User {
-  id             String    @id @default(uuid()) @db.Uuid
-  tenantId       String    @map("tenant_id") @db.Uuid
-  externalAuthId String    @unique @map("external_auth_id") @db.VarChar(255)
-  email          String    @db.VarChar(255)
-  name           String    @db.VarChar(255)
-  avatarUrl      String?   @map("avatar_url") @db.Text
-  role           UserRole  @default(MEMBER)
-  lastLoginAt    DateTime? @map("last_login_at")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
-
-  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  promos            Promo[]
-  dispatches        Dispatch[]
-  agentInteractions AgentInteraction[]
-
-  @@unique([tenantId, email])
-  @@index([tenantId])
-  @@index([externalAuthId])
-  @@map("users")
-}
-
-// ============================================
-// Affiliate Accounts
-// ============================================
-
-model AffiliateAccount {
-  id          String        @id @default(uuid()) @db.Uuid
-  tenantId    String        @map("tenant_id") @db.Uuid
-  marketplace Marketplace
-  label       String        @db.VarChar(255)
-  credentials Json
-  status      AccountStatus @default(ACTIVE)
-  lastSyncAt  DateTime?     @map("last_sync_at")
-  expiresAt   DateTime?     @map("expires_at")
-  metadata    Json?
-  createdAt   DateTime      @default(now()) @map("created_at")
-  updatedAt   DateTime      @updatedAt @map("updated_at")
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@unique([tenantId, marketplace, label])
-  @@index([tenantId, marketplace])
-  @@index([tenantId, status])
-  @@map("affiliate_accounts")
-}
-
-// ============================================
-// WhatsApp Sessions
-// ============================================
-
-model WaSession {
-  id            String          @id @default(uuid()) @db.Uuid
-  tenantId      String          @map("tenant_id") @db.Uuid
-  phoneNumber   String          @map("phone_number") @db.VarChar(20)
-  name          String          @default("") @db.VarChar(255)
-  status        WaSessionStatus @default(DISCONNECTED)
-  healthScore   Int             @default(100) @map("health_score")
-  warmupDay     Int             @default(0) @map("warmup_day")
-  dailyMsgCount Int             @default(0) @map("daily_msg_count")
-  dailyMsgReset DateTime?       @map("daily_msg_reset")
-  firstConnAt   DateTime?       @map("first_conn_at")
-  lastConnAt    DateTime?       @map("last_conn_at")
-  authState     Json?           @map("auth_state")
-  metadata      Json?
-  createdAt     DateTime        @default(now()) @map("created_at")
-  updatedAt     DateTime        @updatedAt @map("updated_at")
-
-  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  groups        Group[]
-  dispatchItems DispatchItem[]
-  authKeys      WaAuthKey[]
-
-  @@unique([tenantId, phoneNumber])
-  @@index([tenantId, status])
-  @@map("wa_sessions")
-}
-
-// ============================================
-// WhatsApp Auth Keys (Signal protocol state)
-// ============================================
-
-model WaAuthKey {
-  id        String   @id @default(uuid()) @db.Uuid
-  sessionId String   @map("session_id") @db.Uuid
-  keyType   String   @map("key_type") @db.VarChar(50)
-  keyId     String   @map("key_id") @db.VarChar(255)
-  value     Json
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  session WaSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-
-  @@unique([sessionId, keyType, keyId])
-  @@index([sessionId, keyType])
-  @@map("wa_auth_keys")
-}
-
-// ============================================
-// Groups & Members
-// ============================================
-
-model Group {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @map("tenant_id") @db.Uuid
-  sessionId   String   @map("session_id") @db.Uuid
-  channel     Channel  @default(WHATSAPP)
-  externalId  String   @map("external_id") @db.VarChar(255)
-  name        String   @db.VarChar(255)
-  description String?  @db.Text
-  memberCount Int      @default(0) @map("member_count")
-  maxMembers  Int      @default(1024) @map("max_members")
-  inviteLink  String?  @map("invite_link") @db.Text
-  isActive    Boolean  @default(true) @map("is_active")
-  metadata    Json?
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  session       WaSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  members       GroupMember[]
-  dispatchItems DispatchItem[]
-
-  @@unique([tenantId, externalId])
-  @@index([tenantId, channel, isActive])
-  @@index([sessionId])
-  @@map("groups")
-}
-
-model GroupMember {
-  id          String   @id @default(uuid()) @db.Uuid
-  groupId     String   @map("group_id") @db.Uuid
-  externalId  String   @map("external_id") @db.VarChar(255)
-  displayName String?  @map("display_name") @db.VarChar(255)
-  isAdmin     Boolean  @default(false) @map("is_admin")
-  joinedAt    DateTime @default(now()) @map("joined_at")
-  metadata    Json?
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
-
-  @@unique([groupId, externalId])
-  @@index([groupId])
-  @@map("group_members")
-}
-
-// ============================================
-// Promos & Variations
-// ============================================
-
-model Promo {
-  id              String      @id @default(uuid()) @db.Uuid
-  tenantId        String      @map("tenant_id") @db.Uuid
-  userId          String      @map("user_id") @db.Uuid
-  marketplace     Marketplace
-  productUrl      String      @map("product_url") @db.Text
-  affiliateUrl    String      @map("affiliate_url") @db.Text
-  productName     String      @map("product_name") @db.VarChar(500)
-  originalPrice   Decimal     @map("original_price") @db.Decimal(10, 2)
-  promoPrice      Decimal     @map("promo_price") @db.Decimal(10, 2)
-  discountPercent Int         @map("discount_percent")
-  imageUrl        String?     @map("image_url") @db.Text
-  category        String?     @db.VarChar(255)
-  status          PromoStatus @default(DRAFT)
-  metadata        Json?
-  createdAt       DateTime    @default(now()) @map("created_at")
-  updatedAt       DateTime    @updatedAt @map("updated_at")
-
-  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  variations PromoVariation[]
-  dispatches Dispatch[]
-  feedItems  PromoFeedItem[]
-
-  @@index([tenantId, status])
-  @@index([tenantId, marketplace])
-  @@index([tenantId, createdAt])
-  @@map("promos")
-}
-
-model PromoVariation {
-  id        String   @id @default(uuid()) @db.Uuid
-  promoId   String   @map("promo_id") @db.Uuid
-  label     String   @db.VarChar(100)
-  copyText  String   @map("copy_text") @db.Text
-  imageUrl  String?  @map("image_url") @db.Text
-  isDefault Boolean  @default(false) @map("is_default")
-  metadata  Json?
-  createdAt DateTime @default(now()) @map("created_at")
-
-  promo Promo @relation(fields: [promoId], references: [id], onDelete: Cascade)
-
-  @@index([promoId])
-  @@map("promo_variations")
-}
-
-// ============================================
-// Dispatches
-// ============================================
-
-model Dispatch {
-  id           String         @id @default(uuid()) @db.Uuid
-  tenantId     String         @map("tenant_id") @db.Uuid
-  userId       String         @map("user_id") @db.Uuid
-  promoId      String?        @map("promo_id") @db.Uuid
-  channel      Channel        @default(WHATSAPP)
-  copyTemplate String         @map("copy_template") @db.Text
-  mediaUrl     String?        @map("media_url") @db.Text
-  mediaType    String?        @map("media_type") @db.VarChar(50)
-  status       DispatchStatus @default(PENDING)
-  priority     Int            @default(0)
-  scheduledAt  DateTime?      @map("scheduled_at")
-  startedAt    DateTime?      @map("started_at")
-  completedAt  DateTime?      @map("completed_at")
-  totalGroups  Int            @default(0) @map("total_groups")
-  sentCount    Int            @default(0) @map("sent_count")
-  failedCount  Int            @default(0) @map("failed_count")
-  metadata     Json?
-  createdAt    DateTime       @default(now()) @map("created_at")
-  updatedAt    DateTime       @updatedAt @map("updated_at")
-
-  tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  promo  Promo?         @relation(fields: [promoId], references: [id], onDelete: SetNull)
-  items  DispatchItem[]
-
-  @@index([tenantId, status])
-  @@index([tenantId, createdAt])
-  @@index([scheduledAt])
-  @@map("dispatches")
-}
-
-model DispatchItem {
-  id           String             @id @default(uuid()) @db.Uuid
-  dispatchId   String             @map("dispatch_id") @db.Uuid
-  groupId      String             @map("group_id") @db.Uuid
-  sessionId    String?            @map("session_id") @db.Uuid
-  copyRendered String?            @map("copy_rendered") @db.Text
-  status       DispatchItemStatus @default(PENDING)
-  attempts     Int                @default(0)
-  lastError    String?            @map("last_error") @db.Text
-  sentAt       DateTime?          @map("sent_at")
-  latencyMs    Int?               @map("latency_ms")
-  jobId        String?            @map("job_id") @db.VarChar(255)
-  createdAt    DateTime           @default(now()) @map("created_at")
-  updatedAt    DateTime           @updatedAt @map("updated_at")
-
-  dispatch Dispatch   @relation(fields: [dispatchId], references: [id], onDelete: Cascade)
-  group    Group      @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  session  WaSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
-
-  @@index([dispatchId, status])
-  @@index([groupId])
-  @@map("dispatch_items")
-}
-
-// ============================================
-// Promo Feeds
-// ============================================
-
-model PromoFeed {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @map("tenant_id") @db.Uuid
-  name        String   @db.VarChar(255)
-  slug        String   @db.VarChar(100)
-  description String?  @db.Text
-  isActive    Boolean  @default(true) @map("is_active")
-  metadata    Json?
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  items  PromoFeedItem[]
-
-  @@unique([tenantId, slug])
-  @@index([tenantId, isActive])
-  @@map("promo_feeds")
-}
-
-model PromoFeedItem {
-  id        String    @id @default(uuid()) @db.Uuid
-  feedId    String    @map("feed_id") @db.Uuid
-  promoId   String    @map("promo_id") @db.Uuid
-  position  Int       @default(0)
-  pinnedAt  DateTime? @map("pinned_at")
-  createdAt DateTime  @default(now()) @map("created_at")
-
-  feed  PromoFeed @relation(fields: [feedId], references: [id], onDelete: Cascade)
-  promo Promo     @relation(fields: [promoId], references: [id], onDelete: Cascade)
-
-  @@unique([feedId, promoId])
-  @@index([feedId, position])
-  @@map("promo_feed_items")
-}
-
-// ============================================
-// Link Tracking (LinkSpot)
-// ============================================
-
-model LinkSpot {
-  id           String    @id @default(uuid()) @db.Uuid
-  tenantId     String    @map("tenant_id") @db.Uuid
-  shortCode    String    @unique @map("short_code") @db.VarChar(20)
-  targetUrl    String    @map("target_url") @db.Text
-  affiliateUrl String    @map("affiliate_url") @db.Text
-  clickCount   Int       @default(0) @map("click_count")
-  isActive     Boolean   @default(true) @map("is_active")
-  expiresAt    DateTime? @map("expires_at")
-  metadata     Json?
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
-
-  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  clicks LinkClick[]
-
-  @@index([shortCode])
-  @@index([tenantId, isActive])
-  @@map("link_spots")
-}
-
-model LinkClick {
-  id         String   @id @default(uuid()) @db.Uuid
-  linkSpotId String   @map("link_spot_id") @db.Uuid
-  ip         String?  @db.VarChar(45)
-  userAgent  String?  @map("user_agent") @db.Text
-  referer    String?  @db.Text
-  country    String?  @db.VarChar(2)
-  city       String?  @db.VarChar(100)
-  createdAt  DateTime @default(now()) @map("created_at")
-
-  linkSpot LinkSpot @relation(fields: [linkSpotId], references: [id], onDelete: Cascade)
-
-  @@index([linkSpotId, createdAt])
-  @@map("link_clicks")
-}
-
-// ============================================
-// Analytics
-// ============================================
-
-model AnalyticsEvent {
-  id        String   @id @default(uuid()) @db.Uuid
-  tenantId  String   @map("tenant_id") @db.Uuid
-  eventType String   @map("event_type") @db.VarChar(100)
-  entityId  String?  @map("entity_id") @db.Uuid
-  payload   Json?
-  createdAt DateTime @default(now()) @map("created_at")
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId, eventType, createdAt])
-  @@index([entityId])
-  @@map("analytics_events")
-}
-
-// ============================================
-// AI Agent Config & Interactions
-// ============================================
-
-model AgentConfig {
-  id           String   @id @default(uuid()) @db.Uuid
-  tenantId     String   @map("tenant_id") @db.Uuid
-  agentType    String   @map("agent_type") @db.VarChar(50)
-  systemPrompt String?  @map("system_prompt") @db.Text
-  model        String   @default("claude-haiku-4-5-20251001") @db.VarChar(100)
-  temperature  Float    @default(0.7)
-  maxTokens    Int      @default(1024) @map("max_tokens")
-  isActive     Boolean  @default(true) @map("is_active")
-  metadata     Json?
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-
-  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  interactions AgentInteraction[]
-
-  @@unique([tenantId, agentType])
-  @@index([tenantId, isActive])
-  @@map("agent_configs")
-}
-
-model AgentInteraction {
-  id            String   @id @default(uuid()) @db.Uuid
-  agentConfigId String   @map("agent_config_id") @db.Uuid
-  userId        String   @map("user_id") @db.Uuid
-  inputPayload  Json     @map("input_payload")
-  outputPayload Json?    @map("output_payload")
-  tokenCount    Int?     @map("token_count")
-  latencyMs     Int?     @map("latency_ms")
-  success       Boolean  @default(true)
-  errorMessage  String?  @map("error_message") @db.Text
-  createdAt     DateTime @default(now()) @map("created_at")
-
-  agentConfig AgentConfig @relation(fields: [agentConfigId], references: [id], onDelete: Cascade)
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([agentConfigId, createdAt])
-  @@index([userId, createdAt])
-  @@map("agent_interactions")
-}
-
-// ============================================
-// Subscriptions & Billing
-// ============================================
-
-model Subscription {
-  id                 String             @id @default(uuid()) @db.Uuid
-  tenantId           String             @map("tenant_id") @db.Uuid
-  planDefinitionId   String             @map("plan_definition_id") @db.Uuid
-  status             SubscriptionStatus @default(ACTIVE)
-  externalId         String?            @unique @map("external_id") @db.VarChar(255)
-  currentPeriodStart DateTime           @map("current_period_start")
-  currentPeriodEnd   DateTime           @map("current_period_end")
-  cancelledAt        DateTime?          @map("cancelled_at")
-  metadata           Json?
-  createdAt          DateTime           @default(now()) @map("created_at")
-  updatedAt          DateTime           @updatedAt @map("updated_at")
-
-  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  planDefinition PlanDefinition @relation(fields: [planDefinitionId], references: [id])
-
-  @@index([tenantId, status])
-  @@map("subscriptions")
-}
-
-model PlanDefinition {
-  id             String   @id @default(uuid()) @db.Uuid
-  plan           Plan     @unique
-  name           String   @db.VarChar(100)
-  priceMonthly   Decimal  @map("price_monthly") @db.Decimal(10, 2)
-  priceYearly    Decimal? @map("price_yearly") @db.Decimal(10, 2)
-  maxWaSessions  Int      @map("max_wa_sessions")
-  maxGroups      Int      @map("max_groups")
-  maxPromos      Int      @map("max_promos")
-  maxDispatches  Int      @map("max_dispatches")
-  aiCreditsMonth Int      @map("ai_credits_month")
-  features       Json?
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  subscriptions Subscription[]
-
-  @@map("plan_definitions")
-}
-
-// ============================================
-// Usage Metrics
-// ============================================
-
-model UsageMetric {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @map("tenant_id") @db.Uuid
-  metricType  String   @map("metric_type") @db.VarChar(100)
-  value       Int      @default(0)
-  periodStart DateTime @map("period_start")
-  periodEnd   DateTime @map("period_end")
-  metadata    Json?
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@unique([tenantId, metricType, periodStart])
-  @@index([tenantId, metricType, periodStart])
-  @@map("usage_metrics")
-}
-
-// ============================================
-// Telegram Bots (per tenant)
-// ============================================
-
-model TelegramBot {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @map("tenant_id") @db.Uuid
-  botToken    String   @map("bot_token") @db.Text // encrypted
-  botUsername String   @map("bot_username") @db.VarChar(255)
-  name        String   @default("") @db.VarChar(255)
-  isActive    Boolean  @default(true) @map("is_active")
-  webhookUrl  String?  @map("webhook_url") @db.Text
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  channels TelegramChannel[]
-
-  @@unique([tenantId, botUsername])
-  @@index([tenantId, isActive])
-  @@map("telegram_bots")
-}
-
-// ============================================
-// Telegram Channels/Groups (destinations)
-// ============================================
-
-model TelegramChannel {
-  id           String    @id @default(uuid()) @db.Uuid
-  tenantId     String    @map("tenant_id") @db.Uuid
-  botId        String    @map("bot_id") @db.Uuid
-  chatId       String    @map("chat_id") @db.VarChar(255) // Telegram chat ID (can be negative for groups)
-  name         String    @db.VarChar(255)
-  type         String    @default("channel") @db.VarChar(50) // channel, group, supergroup
-  memberCount  Int       @default(0) @map("member_count")
-  isActive     Boolean   @default(true) @map("is_active")
-  agentEnabled Boolean   @default(false) @map("agent_enabled")
-  lastDispatch DateTime? @map("last_dispatch")
-  metadata     Json?
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
-
-  bot TelegramBot @relation(fields: [botId], references: [id], onDelete: Cascade)
-
-  @@unique([tenantId, chatId])
-  @@index([tenantId, isActive])
-  @@index([botId])
-  @@map("telegram_channels")
-}
-
-// ============================================
-// Products (for RAG / catalog)
-// ============================================
-
-model Product {
-  id            String   @id @default(uuid()) @db.Uuid
-  tenantId      String   @map("tenant_id") @db.Uuid
-  name          String   @db.VarChar(500)
-  description   String   @default("") @db.Text
-  category      String   @default("") @db.VarChar(255)
-  price         Float
-  originalPrice Float?   @map("original_price")
-  affiliateUrl  String   @map("affiliate_url") @db.Text
-  imageUrl      String?  @map("image_url") @db.Text
-  marketplace   String   @default("") @db.VarChar(50) // shopee, amazon, mercadolivre, magalu
-  isActive      Boolean  @default(true) @map("is_active")
-  embedding     Float[]  @default([]) // pgvector embedding (stored as float array)
-  metadata      Json?
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-
-  @@index([tenantId, isActive])
-  @@index([tenantId, category])
-  @@index([tenantId, marketplace])
-  @@map("products")
-}
-
-// ============================================
-// Telegram Dispatch Items
-// ============================================
-
 enum TelegramDispatchStatus {
   PENDING
   QUEUED
@@ -666,26 +589,4 @@ enum TelegramDispatchStatus {
   SENT
   FAILED
   CANCELLED
-}
-
-model TelegramDispatchItem {
-  id         String                 @id @default(uuid()) @db.Uuid
-  dispatchId String                 @map("dispatch_id") @db.Uuid
-  channelId  String                 @map("channel_id") @db.Uuid
-  chatId     String                 @map("chat_id") @db.VarChar(255)
-  botId      String                 @map("bot_id") @db.Uuid
-  text       String                 @db.Text
-  mediaUrl   String?                @map("media_url") @db.Text
-  mediaType  String?                @map("media_type") @db.VarChar(50)
-  status     TelegramDispatchStatus @default(PENDING)
-  attempts   Int                    @default(0)
-  lastError  String?                @map("last_error") @db.Text
-  sentAt     DateTime?              @map("sent_at")
-  jobId      String?                @map("job_id") @db.VarChar(255)
-  createdAt  DateTime               @default(now()) @map("created_at")
-  updatedAt  DateTime               @updatedAt @map("updated_at")
-
-  @@index([dispatchId, status])
-  @@index([channelId])
-  @@map("telegram_dispatch_items")
 }

@@ -1,7 +1,7 @@
 {
   "framework": "nextjs",
   "installCommand": "npm ci",
-  "buildCommand": "npx turbo run build --filter=web...",
+  "buildCommand": "npx turbo run build --filter=@dispara/web...",
   "outputDirectory": "apps/web/.next",
   "git": {
     "deploymentEnabled": {

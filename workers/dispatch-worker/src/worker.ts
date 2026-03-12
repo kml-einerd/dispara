@@ -8,7 +8,9 @@ import { getWaSessionManager } from '@dispara/wa-manager';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
 const prisma = new PrismaClient();
-const redisClient = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379');
+const redisClient = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+  maxRetriesPerRequest: null,
+});
 const redis = redisClient as unknown as import('bullmq').ConnectionOptions;
 const waManager = getWaSessionManager();
 

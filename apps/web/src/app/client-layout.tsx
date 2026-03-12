@@ -1,13 +1,27 @@
 'use client';
 
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { ToastProvider } from '@/components/ui/Toast';
 import { useAuth } from '@/contexts/AuthContext';
 
+const PUBLIC_ROUTES = ['/login', '/auth/callback'];
+
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const { loading, session } = useAuth();
+  const pathname = usePathname();
+  const router = useRouter();
+  const isPublicRoute = PUBLIC_ROUTES.some((r) => pathname.startsWith(r));
 
-  if (loading) {
+  useEffect(() => {
+    if (!loading && !session && !isPublicRoute) {
+      console.log('[ClientLayout] No session found, redirecting to /login');
+      router.push('/login');
+    }
+  }, [loading, session, isPublicRoute, router]);
+
+  if (loading && !isPublicRoute) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-[var(--color-primary,#6366f1)] border-t-transparent" />
@@ -15,9 +29,15 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!session) {
-    // Middleware handles redirect to /login — render nothing as safety net
-    return null;
+  if (!session && !isPublicRoute) {
+    // Show a minimal placeholder while redirecting to avoid white screen
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f8fafc]" />
+    );
+  }
+
+  if (isPublicRoute) {
+    return <>{children}</>;
   }
 
   return (
