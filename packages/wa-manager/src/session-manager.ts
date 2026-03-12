@@ -1,25 +1,24 @@
 import { EventEmitter } from 'node:events';
-import { mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
 import makeWASocket, {
-  useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
   type WASocket,
   type GroupMetadata,
   type ConnectionState,
-  type BaileysEventMap,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
+import type { PrismaClient } from '@prisma/client';
 import pino from 'pino';
 import QRCode from 'qrcode';
 import { getBrowserTuple } from './browser-fingerprints.js';
+import { usePostgresAuthState, clearPostgresAuthState } from './pg-auth-state.js';
 
 export interface SessionConfig {
   sessionId: string;
   tenantId: string;
   phoneNumber: string;
+  prisma: PrismaClient;
   browserTuple?: [string, string, string];
   onQR?: (qr: string) => void;
   onConnected?: () => void;
@@ -34,6 +33,7 @@ export interface SessionHealth {
 
 interface SessionEntry {
   socket: WASocket;
+  prisma: PrismaClient;
   tenantId: string;
   phoneNumber: string;
   lastActivity: Date;
@@ -41,7 +41,6 @@ interface SessionEntry {
   retryCount: number;
 }
 
-const AUTH_BASE_DIR = process.env.WA_AUTH_DIR ?? '/tmp/wa-sessions';
 const MAX_RETRY_COUNT = 3;
 
 export class WaSessionManager extends EventEmitter {
@@ -53,7 +52,7 @@ export class WaSessionManager extends EventEmitter {
    * Emits 'qr', 'connected', 'disconnected', 'banned' events.
    */
   async createSession(config: SessionConfig): Promise<void> {
-    const { sessionId, tenantId, phoneNumber } = config;
+    const { sessionId, tenantId, phoneNumber, prisma } = config;
 
     // Prevent duplicate sessions
     if (this.sessions.has(sessionId)) {
@@ -61,10 +60,7 @@ export class WaSessionManager extends EventEmitter {
       await this.disconnectSession(sessionId);
     }
 
-    const authDir = join(AUTH_BASE_DIR, sessionId);
-    await mkdir(authDir, { recursive: true });
-
-    const { state, saveCreds } = await useMultiFileAuthState(authDir);
+    const { state, saveCreds } = await usePostgresAuthState(prisma, sessionId);
     const { version } = await fetchLatestBaileysVersion();
 
     const browserTuple = config.browserTuple ?? getBrowserTuple(sessionId);
@@ -85,6 +81,7 @@ export class WaSessionManager extends EventEmitter {
 
     const entry: SessionEntry = {
       socket: sock,
+      prisma,
       tenantId,
       phoneNumber,
       lastActivity: new Date(),
@@ -212,17 +209,15 @@ export class WaSessionManager extends EventEmitter {
       this.logger.error({ sessionId, err }, 'Error during logout');
     }
 
+    // Clear auth state from PostgreSQL
+    try {
+      await clearPostgresAuthState(entry.prisma, sessionId);
+    } catch (err) {
+      this.logger.error({ sessionId, err }, 'Failed to clear PostgreSQL auth state');
+    }
+
     this.sessions.delete(sessionId);
     this.logger.info({ sessionId }, 'Session logged out');
-
-    // Clean up auth files
-    const { rm } = await import('node:fs/promises');
-    const authDir = join(AUTH_BASE_DIR, sessionId);
-    try {
-      await rm(authDir, { recursive: true, force: true });
-    } catch {
-      // Ignore cleanup errors
-    }
   }
 
   /**

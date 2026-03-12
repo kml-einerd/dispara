@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@promospot/shared'],
+  transpilePackages: ['@dispara/shared'],
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '**.amazon.com' },

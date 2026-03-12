@@ -1,5 +1,5 @@
 {
-  "name": "@promospot/web",
+  "name": "@dispara/web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,19 +11,25 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@dispara/shared": "*",
+    "@supabase/ssr": "^0.6.0",
+    "@supabase/supabase-js": "^2.49.0",
+    "@swc/helpers": "^0.5.15",
+    "client-only": "^0.0.1",
     "next": "^15.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@promospot/shared": "*"
+    "server-only": "^0.0.1",
+    "styled-jsx": "^5.1.6"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "typescript": "^5.7.0",
-    "tailwindcss": "^4.0.0",
-    "@tailwindcss/postcss": "^4.0.0",
-    "postcss": "^8.5.0",
+    "@tailwindcss/postcss": "^4.2.1",
+    "@types/node": "^22.19.15",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^4.2.1",
+    "typescript": "^5.9.3",
     "vitest": "^3.0.0"
   }
 }

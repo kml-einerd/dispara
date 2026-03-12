@@ -183,10 +183,31 @@ model WaSession {
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   groups        Group[]
   dispatchItems DispatchItem[]
+  authKeys      WaAuthKey[]
 
   @@unique([tenantId, phoneNumber])
   @@index([tenantId, status])
   @@map("wa_sessions")
+}
+
+// ============================================
+// WhatsApp Auth Keys (Signal protocol state)
+// ============================================
+
+model WaAuthKey {
+  id        String   @id @default(uuid()) @db.Uuid
+  sessionId String   @map("session_id") @db.Uuid
+  keyType   String   @map("key_type") @db.VarChar(50)
+  keyId     String   @map("key_id") @db.VarChar(255)
+  value     Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  session WaSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, keyType, keyId])
+  @@index([sessionId, keyType])
+  @@map("wa_auth_keys")
 }
 
 // ============================================

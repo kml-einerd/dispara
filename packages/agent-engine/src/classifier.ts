@@ -1,8 +1,9 @@
-import Anthropic from '@anthropic-ai/sdk';
 import pino from 'pino';
 import type { ClassificationResult, Intent } from './types.js';
 
 const logger = pino({ name: 'intent-classifier' });
+
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 const CLASSIFICATION_SYSTEM_PROMPT = `You are an intent classifier for a promotional products bot in Brazilian Portuguese groups.
 Classify the user message into one of these intents:
@@ -32,36 +33,50 @@ const DEFAULT_RESULT: ClassificationResult = {
 };
 
 export class IntentClassifier {
-  private client: Anthropic;
+  private apiKey: string;
+  private model: string;
 
-  constructor(apiKey?: string) {
-    this.client = new Anthropic({
-      apiKey: apiKey ?? process.env['ANTHROPIC_API_KEY'],
-    });
+  constructor(apiKey?: string, model?: string) {
+    this.apiKey = apiKey ?? process.env['OPENROUTER_API_KEY'] ?? '';
+    this.model = model ?? 'anthropic/claude-haiku-4-5-20251001';
   }
 
   async classifyIntent(message: string): Promise<ClassificationResult> {
     try {
-      const response = await this.client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 256,
-        temperature: 0.1,
-        system: CLASSIFICATION_SYSTEM_PROMPT,
-        messages: [
-          {
-            role: 'user',
-            content: message,
-          },
-        ],
+      const response = await fetch(OPENROUTER_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: this.model,
+          max_tokens: 256,
+          temperature: 0.1,
+          messages: [
+            { role: 'system', content: CLASSIFICATION_SYSTEM_PROMPT },
+            { role: 'user', content: message },
+          ],
+        }),
       });
 
-      const textBlock = response.content.find((block) => block.type === 'text');
-      if (!textBlock || textBlock.type !== 'text') {
-        logger.warn({ message }, 'No text block in classification response');
+      if (!response.ok) {
+        const errorBody = await response.text();
+        logger.error({ status: response.status, body: errorBody }, 'OpenRouter API error');
         return DEFAULT_RESULT;
       }
 
-      const parsed = JSON.parse(textBlock.text) as {
+      const data = await response.json() as {
+        choices: Array<{ message: { content: string } }>;
+      };
+
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) {
+        logger.warn({ message }, 'No content in classification response');
+        return DEFAULT_RESULT;
+      }
+
+      const parsed = JSON.parse(content) as {
         intent?: string;
         confidence?: number;
         entities?: ClassificationResult['entities'];

@@ -1,5 +1,5 @@
 {
-  "name": "@promospot/dispatch-worker",
+  "name": "@dispara/dispatch-worker",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,9 +11,9 @@
   },
   "dependencies": {
     "@prisma/client": "^6.4.0",
-    "@promospot/dispatch-engine": "*",
-    "@promospot/shared": "*",
-    "@promospot/wa-manager": "*",
+    "@dispara/dispatch-engine": "*",
+    "@dispara/shared": "*",
+    "@dispara/wa-manager": "*",
     "bullmq": "^5.34.0",
     "ioredis": "^5.4.0",
     "pino": "^9.6.0"

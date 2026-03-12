@@ -1,5 +1,5 @@
 {
-  "name": "@promospot/api",
+  "name": "@dispara/api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,18 +13,20 @@
   },
   "dependencies": {
     "@prisma/client": "^6.4.0",
-    "@promospot/dispatch-engine": "*",
-    "@promospot/shared": "*",
-    "@promospot/wa-manager": "*",
+    "@dispara/agent-engine": "*",
+    "@dispara/dispatch-engine": "*",
+    "@dispara/shared": "*",
+    "@dispara/telegram": "*",
+    "@dispara/wa-manager": "*",
     "bullmq": "^5.34.0",
     "fastify": "^5.2.0",
     "@fastify/cors": "^10.0.0",
     "@fastify/websocket": "^11.0.0",
-    "@fastify/jwt": "^9.0.0",
     "@fastify/rate-limit": "^10.0.0",
     "ioredis": "^5.4.0",
     "pino": "^9.6.0",
-    "zod": "^3.24.0"
+    "zod": "^3.24.0",
+    "@supabase/supabase-js": "^2.49.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

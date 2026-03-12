@@ -21,7 +21,7 @@ export const sessionResponseSchema = z.object({
   tenantId: z.string().uuid(),
   name: z.string(),
   phoneNumber: z.string(),
-  status: z.enum(['CONNECTING', 'CONNECTED', 'DISCONNECTED', 'BANNED', 'QUARANTINE']),
+  status: z.enum(['CONNECTED', 'DISCONNECTED', 'BANNED', 'WARMING_UP', 'CONNECTING']),
   healthScore: z.number().int().min(0).max(100),
   warmupDay: z.number().int(),
   dailyMsgCount: z.number().int(),

@@ -1,8 +1,9 @@
-import Anthropic from '@anthropic-ai/sdk';
 import pino from 'pino';
 import type { AgentConfig, Intent, RAGResult } from './types.js';
 
 const logger = pino({ name: 'conversational-responder' });
+
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 const BASE_SYSTEM_PROMPT = `Voce e um assistente de promocoes em um grupo de compras.
 Responda de forma natural e casual, como se fosse um participante do grupo.
@@ -14,12 +15,12 @@ Responda em portugues brasileiro informal.`;
 const NO_PRODUCTS_RESPONSE = 'Hmm, nao encontrei nada sobre isso no momento. Mas fico de olho e aviso se aparecer alguma promo!';
 
 export class ConversationalResponder {
-  private client: Anthropic;
+  private apiKey: string;
+  private model: string;
 
-  constructor(apiKey?: string) {
-    this.client = new Anthropic({
-      apiKey: apiKey ?? process.env['ANTHROPIC_API_KEY'],
-    });
+  constructor(apiKey?: string, model?: string) {
+    this.apiKey = apiKey ?? process.env['OPENROUTER_API_KEY'] ?? '';
+    this.model = model ?? 'anthropic/claude-haiku-4-5-20251001';
   }
 
   async generateResponse(
@@ -36,26 +37,40 @@ export class ConversationalResponder {
     const systemPrompt = this.buildSystemPrompt(config, products, intent);
 
     try {
-      const response = await this.client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 300,
-        temperature: 0.7,
-        system: systemPrompt,
-        messages: [
-          {
-            role: 'user',
-            content: originalMessage,
-          },
-        ],
+      const response = await fetch(OPENROUTER_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: this.model,
+          max_tokens: 300,
+          temperature: 0.7,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: originalMessage },
+          ],
+        }),
       });
 
-      const textBlock = response.content.find((block) => block.type === 'text');
-      if (!textBlock || textBlock.type !== 'text') {
-        logger.warn({ tenantId: config.tenantId }, 'No text block in responder output');
+      if (!response.ok) {
+        const errorBody = await response.text();
+        logger.error({ status: response.status, body: errorBody }, 'OpenRouter API error');
         return NO_PRODUCTS_RESPONSE;
       }
 
-      return textBlock.text.trim();
+      const data = await response.json() as {
+        choices: Array<{ message: { content: string } }>;
+      };
+
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) {
+        logger.warn({ tenantId: config.tenantId }, 'No content in responder output');
+        return NO_PRODUCTS_RESPONSE;
+      }
+
+      return content.trim();
     } catch (err) {
       logger.error({ err, tenantId: config.tenantId }, 'Error generating response');
       return NO_PRODUCTS_RESPONSE;

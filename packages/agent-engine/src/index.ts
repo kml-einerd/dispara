@@ -1,11 +1,14 @@
-export { classifyIntent } from './classifiers/intent-classifier.js';
-export { retrieveProducts } from './rag/product-retriever.js';
-export { generateResponse } from './responders/response-generator.js';
+export { IntentClassifier } from './classifier.js';
+export { ProductRAG } from './rag.js';
+export type { ProductQueryFn } from './rag.js';
+export { ConversationalResponder } from './responder.js';
+export { AgentEngine } from './agent.js';
+export type { ProcessMessageResult } from './agent.js';
 export type {
-  ClassifiedIntent,
-  InboundMessage,
-  ProductMatch,
-  AgentResponse,
+  Intent,
+  ClassificationResult,
   AgentConfig,
+  AgentInteraction,
+  ProductForRAG,
+  RAGResult,
 } from './types.js';
-export { DEFAULT_AGENT_CONFIG } from './types.js';

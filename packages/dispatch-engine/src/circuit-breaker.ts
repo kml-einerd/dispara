@@ -3,7 +3,7 @@
  * Per-session instantiation — each WhatsApp number gets its own circuit breaker.
  */
 
-import { CIRCUIT_BREAKER } from '@promospot/shared';
+import { CIRCUIT_BREAKER } from '@dispara/shared';
 
 export interface CircuitBreakerConfig {
   /** Number of failures before opening the circuit. Default: 3 */

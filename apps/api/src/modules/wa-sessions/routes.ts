@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { getWaSessionManager, getBrowserTuple } from '@promospot/wa-manager';
+import { getWaSessionManager, getBrowserTuple } from '@dispara/wa-manager';
 import { prisma } from '../../lib/prisma.js';
 import { redis } from '../../lib/redis.js';
 import {
@@ -19,31 +19,31 @@ export async function waSessionRoutes(app: FastifyInstance): Promise<void> {
     const tenantId = request.tenantId;
     const body = createSessionBodySchema.parse(request.body);
 
-    // Create DB record
+    const tempId = crypto.randomUUID();
+    const browserTuple = getBrowserTuple(tempId);
+
+    // Create DB record (starts as DISCONNECTED until QR is scanned)
     const session = await prisma.waSession.create({
       data: {
         tenantId,
         name: body.name,
         phoneNumber: '',
-        status: 'CONNECTING',
-        browserTuple: '',
+        status: 'DISCONNECTED',
+        metadata: {
+          browserTuple,
+          connecting: true,
+        },
       },
     });
 
     const sessionId = session.id;
-    const browserTuple = getBrowserTuple(sessionId);
-
-    // Update with deterministic browser tuple
-    await prisma.waSession.update({
-      where: { id: sessionId },
-      data: { browserTuple: JSON.stringify(browserTuple) },
-    });
 
     // Start Baileys session (fire-and-forget — runs in background)
     waManager.createSession({
       sessionId,
       tenantId,
       phoneNumber: '',
+      prisma,
       browserTuple,
       onQR: async (qr) => {
         try {
@@ -63,6 +63,7 @@ export async function waSessionRoutes(app: FastifyInstance): Promise<void> {
               phoneNumber,
               lastConnAt: new Date(),
               firstConnAt: session.firstConnAt ?? new Date(),
+              metadata: { browserTuple, connecting: false },
             },
           });
           await redis.del(`wa:qr:${sessionId}`);
@@ -70,13 +71,13 @@ export async function waSessionRoutes(app: FastifyInstance): Promise<void> {
           request.log.error({ err, sessionId }, 'Failed to update session on connect');
         }
       },
-      onDisconnected: async (reason) => {
+      onDisconnected: async (_reason) => {
         try {
           await prisma.waSession.update({
             where: { id: sessionId },
             data: {
               status: 'DISCONNECTED',
-              lastDisconnAt: new Date(),
+              metadata: { browserTuple, connecting: false },
             },
           });
           await redis.del(`wa:qr:${sessionId}`);
@@ -91,7 +92,7 @@ export async function waSessionRoutes(app: FastifyInstance): Promise<void> {
             data: {
               status: 'BANNED',
               healthScore: 0,
-              lastDisconnAt: new Date(),
+              metadata: { browserTuple, connecting: false, bannedAt: new Date().toISOString() },
             },
           });
           await redis.del(`wa:qr:${sessionId}`);
@@ -112,7 +113,7 @@ export async function waSessionRoutes(app: FastifyInstance): Promise<void> {
   // ============================================
   // GET /v1/wa/sessions — List all sessions
   // ============================================
-  app.get('/', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/', async (request: FastifyRequest, _reply: FastifyReply) => {
     const tenantId = request.tenantId;
 
     const sessions = await prisma.waSession.findMany({
@@ -147,7 +148,6 @@ export async function waSessionRoutes(app: FastifyInstance): Promise<void> {
       where: { id },
       data: {
         status: 'DISCONNECTED',
-        lastDisconnAt: new Date(),
       },
     });
 
@@ -200,11 +200,12 @@ export async function waSessionRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const qr = await redis.get(`wa:qr:${id}`);
+    const meta = session.metadata as Record<string, unknown> | null;
 
     return {
       sessionId: id,
       qr: qr ?? null,
-      status: session.status,
+      status: meta?.connecting ? 'CONNECTING' : session.status,
     };
   });
 }

@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { Prisma } from '@prisma/client';
 import { importGroupsSchema, updateGroupSchema, listGroupsQuery } from './schema.js';
 import type { ImportGroupsBody, UpdateGroupBody, ListGroupsQuery } from './schema.js';
 
@@ -16,7 +17,7 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
     if (query.isActive !== undefined) where.isActive = query.isActive === 'true';
     if (query.cursor) where.id = { gt: query.cursor };
 
-    const groups = await app.prisma.waGroup.findMany({
+    const groups = await app.prisma.group.findMany({
       where,
       take: query.limit,
       orderBy: { createdAt: 'desc' },
@@ -54,24 +55,24 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
 
       const imported = [];
       for (const group of groups) {
-        const upserted = await app.prisma.waGroup.upsert({
+        const upserted = await app.prisma.group.upsert({
           where: {
-            tenantId_waGroupId: { tenantId, waGroupId: group.id },
+            tenantId_externalId: { tenantId, externalId: group.id },
           },
           create: {
             tenantId,
             sessionId,
-            waGroupId: group.id,
+            externalId: group.id,
             name: group.subject ?? 'Unknown Group',
             description: group.desc ?? '',
             memberCount: group.participants?.length ?? 0,
-            inviteCode: group.inviteCode ?? null,
+            inviteLink: group.inviteCode ?? null,
           },
           update: {
             name: group.subject ?? 'Unknown Group',
             description: group.desc ?? '',
             memberCount: group.participants?.length ?? 0,
-            inviteCode: group.inviteCode ?? null,
+            inviteLink: group.inviteCode ?? null,
             sessionId,
           },
         });
@@ -90,7 +91,7 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
     const tenantId = req.headers['x-tenant-id'] as string;
     if (!tenantId) return reply.status(401).send({ error: 'x-tenant-id required' });
 
-    const group = await app.prisma.waGroup.findFirst({
+    const group = await app.prisma.group.findFirst({
       where: { id: req.params.id, tenantId },
       include: {
         session: { select: { phoneNumber: true, status: true, healthScore: true } },
@@ -109,14 +110,18 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
 
     const body = updateGroupSchema.parse(req.body);
 
-    const existing = await app.prisma.waGroup.findFirst({
+    const existing = await app.prisma.group.findFirst({
       where: { id: req.params.id, tenantId },
     });
     if (!existing) return reply.status(404).send({ error: 'Group not found' });
 
-    const updated = await app.prisma.waGroup.update({
+    const { metadata, ...rest } = body;
+    const updated = await app.prisma.group.update({
       where: { id: req.params.id },
-      data: body,
+      data: {
+        ...rest,
+        ...(metadata !== undefined && { metadata: metadata as Prisma.InputJsonValue }),
+      },
     });
 
     return updated;

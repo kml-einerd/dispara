@@ -1,5 +1,5 @@
 {
-  "name": "promospot-v2",
+  "name": "dispara",
   "private": true,
   "workspaces": [
     "apps/*",
@@ -16,14 +16,22 @@
     "db:push": "cd apps/api && npx prisma db push"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.1",
+    "postcss": "^8.5.8",
+    "prisma": "^6.19.2",
+    "tailwindcss": "^4.2.1",
     "turbo": "^2.4.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.4"
   },
   "engines": {
     "node": ">=22.0.0"
   },
   "packageManager": "npm@10.9.0",
   "dependencies": {
-    "@types/qrcode": "^1.5.6"
+    "@types/node": "^25.4.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3"
   }
 }

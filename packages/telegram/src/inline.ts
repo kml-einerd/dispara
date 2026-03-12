@@ -1,5 +1,6 @@
 import { Composer } from 'grammy';
-import type { Context, InlineQueryResult } from 'grammy';
+import type { Context } from 'grammy';
+import type { InlineQueryResult } from 'grammy/types';
 import pino from 'pino';
 import type { TelegramServices, ProductInfo } from './commands.js';
 

@@ -1,9 +1,9 @@
 /**
  * Warm-up progressive limits for new WhatsApp numbers.
- * Uses the schedule defined in @promospot/shared.
+ * Uses the schedule defined in @dispara/shared.
  */
 
-import { getWarmupLimits } from '@promospot/shared';
+import { getWarmupLimits } from '@dispara/shared';
 
 /**
  * Get current limits for a session based on its warm-up day.

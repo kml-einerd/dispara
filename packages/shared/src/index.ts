@@ -162,7 +162,12 @@ export const QUEUES = {
   DISPATCH: 'dispatch-queue',
   DISPATCH_PRIORITY: 'dispatch-priority-queue',
   DISPATCH_DLQ: 'dispatch-dlq',
+  TELEGRAM_DISPATCH: 'telegram-dispatch-queue',
+  AGENT_RESPONSE: 'agent-response-queue',
 } as const;
+
+/** Supported dispatch channels */
+export type ChannelType = 'whatsapp' | 'telegram' | 'instagram';
 
 // ============================================
 // Dispatch Types

@@ -69,10 +69,10 @@ export class TelegramBotManager {
     return this.bots.get(tenantId);
   }
 
-  getWebhookHandler(tenantId: string): ReturnType<typeof webhookCallback> | undefined {
+  getWebhookHandler(tenantId: string) {
     const instance = this.bots.get(tenantId);
     if (!instance) return undefined;
-    return webhookCallback(instance.bot, 'express');
+    return webhookCallback(instance.bot, 'fastify');
   }
 
   async gracefulShutdown(): Promise<void> {

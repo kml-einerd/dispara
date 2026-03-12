@@ -3,7 +3,7 @@
  * Allowed windows: 09-12h + 14-18h BRT (UTC-3).
  */
 
-import { DISPATCH_WINDOWS } from '@promospot/shared';
+import { DISPATCH_WINDOWS } from '@dispara/shared';
 
 /** BRT offset from UTC in hours */
 const BRT_OFFSET = -3;

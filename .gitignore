@@ -1,1 +1,36 @@
-node_modules/\ndist/\n.env\n*.log\ncoverage/\n.turbo/\nwa-sessions/
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.next/
+out/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Testing
+coverage/
+
+# Turbo
+.turbo/
+
+# WhatsApp sessions (sensitive)
+wa-sessions/
+/data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

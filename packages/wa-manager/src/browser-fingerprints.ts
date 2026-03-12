@@ -4,21 +4,21 @@
  */
 
 const BROWSER_TUPLES: [string, string, string][] = [
-  ['PromoSpot', 'Chrome', '122.0.6261.112'],
-  ['PromoSpot', 'Chrome', '123.0.6312.86'],
-  ['PromoSpot', 'Chrome', '124.0.6367.91'],
-  ['PromoSpot', 'Chrome', '125.0.6422.60'],
-  ['PromoSpot', 'Chrome', '126.0.6478.114'],
-  ['PromoSpot', 'Firefox', '124.0.2'],
-  ['PromoSpot', 'Firefox', '125.0.1'],
-  ['PromoSpot', 'Firefox', '126.0'],
-  ['PromoSpot', 'Edge', '122.0.2365.80'],
-  ['PromoSpot', 'Edge', '123.0.2420.65'],
-  ['PromoSpot', 'Edge', '124.0.2478.51'],
-  ['PromoSpot', 'Safari', '17.3.1'],
-  ['PromoSpot', 'Safari', '17.4'],
-  ['PromoSpot', 'Opera', '108.0.5067.29'],
-  ['PromoSpot', 'Opera', '109.0.5097.33'],
+  ['Dispara', 'Chrome', '122.0.6261.112'],
+  ['Dispara', 'Chrome', '123.0.6312.86'],
+  ['Dispara', 'Chrome', '124.0.6367.91'],
+  ['Dispara', 'Chrome', '125.0.6422.60'],
+  ['Dispara', 'Chrome', '126.0.6478.114'],
+  ['Dispara', 'Firefox', '124.0.2'],
+  ['Dispara', 'Firefox', '125.0.1'],
+  ['Dispara', 'Firefox', '126.0'],
+  ['Dispara', 'Edge', '122.0.2365.80'],
+  ['Dispara', 'Edge', '123.0.2420.65'],
+  ['Dispara', 'Edge', '124.0.2478.51'],
+  ['Dispara', 'Safari', '17.3.1'],
+  ['Dispara', 'Safari', '17.4'],
+  ['Dispara', 'Opera', '108.0.5067.29'],
+  ['Dispara', 'Opera', '109.0.5097.33'],
 ];
 
 /**

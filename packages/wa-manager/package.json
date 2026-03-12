@@ -1,5 +1,5 @@
 {
-  "name": "@promospot/wa-manager",
+  "name": "@dispara/wa-manager",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@promospot/shared": "*",
+    "@prisma/client": "^6.4.0",
+    "@dispara/shared": "*",
     "@whiskeysockets/baileys": "^6.7.16",
     "pino": "^9.6.0",
     "qrcode": "^1.5.0"

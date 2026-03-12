@@ -37,7 +37,7 @@ export class WebSocketGateway {
 
       this.app.log.info({ clientId, tenantId }, 'WebSocket client connected');
 
-      socket.on('message', (raw) => {
+      socket.on('message', (raw: any) => {
         try {
           const msg = JSON.parse(raw.toString());
           this.handleMessage(clientId, msg);
@@ -51,7 +51,7 @@ export class WebSocketGateway {
         this.app.log.info({ clientId }, 'WebSocket client disconnected');
       });
 
-      socket.on('error', (err) => {
+      socket.on('error', (err: Error) => {
         this.app.log.error({ clientId, err }, 'WebSocket error');
         this.clients.delete(clientId);
       });

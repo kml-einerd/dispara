@@ -1,6 +1,6 @@
 /**
- * Mock PromoEngine — drop-in replacement for @promospot/promo-engine
- * and @promospot/marketplace until those packages are built.
+ * Mock PromoEngine — drop-in replacement for @dispara/promo-engine
+ * and @dispara/marketplace until those packages are built.
  *
  * All public methods match the planned real interface so they can be
  * swapped out with a single import change.
@@ -81,7 +81,7 @@ export async function scrapeProduct(url: string): Promise<ScrapedProduct> {
     discountPercent: discountPct,
     imageUrl: `https://placehold.co/600x600/png?text=${encodeURIComponent(marketplace)}`,
     marketplace,
-    affiliateUrl: `${url}?ref=promospot&utm_source=promospot`,
+    affiliateUrl: `${url}?ref=dispara&utm_source=dispara`,
     category: null,
   };
 }
@@ -109,7 +109,7 @@ export async function searchProduct(
     discountPercent: discountPct,
     imageUrl: `https://placehold.co/600x600/png?text=${encodeURIComponent(keyword)}`,
     marketplace: mp,
-    affiliateUrl: `${baseUrl}&ref=promospot`,
+    affiliateUrl: `${baseUrl}&ref=dispara`,
     category: null,
   };
 }

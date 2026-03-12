@@ -2,7 +2,7 @@
  * Human-like delay calculator using Box-Muller transform.
  */
 
-import { GAUSSIAN_DELAY } from '@promospot/shared';
+import { GAUSSIAN_DELAY } from '@dispara/shared';
 
 /**
  * Generate a gaussian random number using Box-Muller transform.

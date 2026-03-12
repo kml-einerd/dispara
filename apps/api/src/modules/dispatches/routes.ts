@@ -2,12 +2,12 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { Queue } from 'bullmq';
 import { createDispatchSchema, listDispatchesQuery } from './schema.js';
 import type { CreateDispatchBody, ListDispatchesQuery } from './schema.js';
-import { QUEUES, isWithinDispatchWindow, type DispatchJobData } from '@promospot/shared';
+import { QUEUES, isWithinDispatchWindow, type DispatchJobData } from '@dispara/shared';
 
 export async function dispatchRoutes(app: FastifyInstance): Promise<void> {
 
-  const dispatchQueue = new Queue(QUEUES.DISPATCH, { connection: app.redis });
-  const priorityQueue = new Queue(QUEUES.DISPATCH_PRIORITY, { connection: app.redis });
+  const dispatchQueue = new Queue(QUEUES.DISPATCH, { connection: app.redis as any });
+  const priorityQueue = new Queue(QUEUES.DISPATCH_PRIORITY, { connection: app.redis as any });
 
   // POST /v1/dispatches — create dispatch
   app.post('/', async (req: FastifyRequest<{ Body: CreateDispatchBody }>, reply: FastifyReply) => {
@@ -17,7 +17,7 @@ export async function dispatchRoutes(app: FastifyInstance): Promise<void> {
     const body = createDispatchSchema.parse(req.body);
 
     // Validate all groups belong to tenant and are active
-    const groups = await app.prisma.waGroup.findMany({
+    const groups = await app.prisma.group.findMany({
       where: {
         id: { in: body.groupIds },
         tenantId,
@@ -32,7 +32,7 @@ export async function dispatchRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: 'No valid active groups found' });
     }
 
-    const missingIds = body.groupIds.filter(id => !groups.find(g => g.id === id));
+    const missingIds = body.groupIds.filter((id: string) => !groups.find((g: any) => g.id === id));
     if (missingIds.length > 0) {
       app.log.warn({ missingIds }, 'Some groups not found or inactive');
     }
@@ -49,6 +49,7 @@ export async function dispatchRoutes(app: FastifyInstance): Promise<void> {
     const dispatch = await app.prisma.dispatch.create({
       data: {
         tenantId,
+        userId: req.headers['x-user-id'] as string ?? tenantId,
         promoId: body.promoId,
         copyTemplate: body.copyTemplate,
         mediaUrl: body.mediaUrl,
@@ -59,7 +60,7 @@ export async function dispatchRoutes(app: FastifyInstance): Promise<void> {
         status: isScheduled ? 'PENDING' : 'PROCESSING',
         startedAt: isScheduled ? null : new Date(),
         items: {
-          create: groups.map(group => ({
+          create: groups.map((group: any) => ({
             groupId: group.id,
             sessionId: group.session.id,
             status: 'PENDING',
@@ -72,13 +73,13 @@ export async function dispatchRoutes(app: FastifyInstance): Promise<void> {
     // Enqueue jobs for each group
     const queue = body.priority === 1 ? priorityQueue : dispatchQueue;
 
-    const jobs = dispatch.items.map((item, index) => ({
+    const jobs = dispatch.items.map((item: any, index: number) => ({
       name: `dispatch-${dispatch.id}-${item.id}`,
       data: {
         dispatchId: dispatch.id,
         dispatchItemId: item.id,
         groupId: item.groupId,
-        waGroupJid: groups.find(g => g.id === item.groupId)!.waGroupId,
+        waGroupJid: groups.find((g: any) => g.id === item.groupId)!.externalId,
         sessionId: item.sessionId!,
         tenantId,
         copyTemplate: body.copyTemplate,
@@ -150,7 +151,7 @@ export async function dispatchRoutes(app: FastifyInstance): Promise<void> {
       include: {
         items: {
           include: {
-            group: { select: { name: true, waGroupId: true } },
+            group: { select: { name: true, externalId: true } },
             session: { select: { phoneNumber: true } },
           },
           orderBy: { createdAt: 'asc' },
@@ -178,7 +179,7 @@ export async function dispatchRoutes(app: FastifyInstance): Promise<void> {
 
     // Remove pending jobs from queue
     const pendingItems = await app.prisma.dispatchItem.findMany({
-      where: { dispatchId: dispatch.id, status: { in: ['PENDING', 'QUEUED'] } },
+      where: { dispatchId: dispatch.id, status: 'PENDING' },
     });
 
     for (const item of pendingItems) {
@@ -203,9 +204,9 @@ export async function dispatchRoutes(app: FastifyInstance): Promise<void> {
       app.prisma.dispatchItem.updateMany({
         where: {
           dispatchId: dispatch.id,
-          status: { in: ['PENDING', 'QUEUED'] },
+          status: 'PENDING',
         },
-        data: { status: 'CANCELLED' },
+        data: { status: 'FAILED' },
       }),
     ]);
 
@@ -247,13 +248,13 @@ export async function dispatchRoutes(app: FastifyInstance): Promise<void> {
       data: { status: 'PROCESSING', failedCount: 0 },
     });
 
-    const jobs = dispatch.items.map((item, index) => ({
+    const jobs = dispatch.items.map((item: any, index: number) => ({
       name: `dispatch-retry-${dispatch.id}-${item.id}`,
       data: {
         dispatchId: dispatch.id,
         dispatchItemId: item.id,
         groupId: item.groupId,
-        waGroupJid: item.group.waGroupId,
+        waGroupJid: item.group.externalId,
         sessionId: item.sessionId!,
         tenantId,
         copyTemplate: dispatch.copyTemplate,

@@ -47,9 +47,7 @@ export class TelegramDispatcher {
   }
 
   async addJob(data: DispatchJobData): Promise<string> {
-    const job = await this.queue.add('send-message', data, {
-      rateLimiterKey: `telegram:${data.botToken}`,
-    });
+    const job = await this.queue.add('send-message', data);
     logger.info({ jobId: job.id, tenantId: data.tenantId, chatId: data.chatId }, 'Dispatch job added');
     return job.id!;
   }
@@ -58,9 +56,6 @@ export class TelegramDispatcher {
     const bulkJobs = jobs.map((data) => ({
       name: 'send-message',
       data,
-      opts: {
-        rateLimiterKey: `telegram:${data.botToken}`,
-      },
     }));
 
     const results = await this.queue.addBulk(bulkJobs);

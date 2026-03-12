@@ -1,28 +1,27 @@
 import { Worker, Job } from 'bullmq';
 import { PrismaClient } from '@prisma/client';
-import Redis from 'ioredis';
+import { Redis as IORedis } from 'ioredis';
 import pino from 'pino';
-import { QUEUES, GAUSSIAN_DELAY, type DispatchJobData } from '@promospot/shared';
+import { QUEUES, type DispatchJobData, isWithinDispatchWindow } from '@dispara/shared';
+import { spinText, applyAntiDetection, humanDelay, typingDuration, CircuitBreaker, canSendMessage } from '@dispara/dispatch-engine';
+import { getWaSessionManager } from '@dispara/wa-manager';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
 const prisma = new PrismaClient();
-const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
+const redisClient = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379');
+const redis = redisClient as unknown as import('bullmq').ConnectionOptions;
+const waManager = getWaSessionManager();
 
-/**
- * Dynamic imports for dispatch-engine modules.
- * These will be available after packages/dispatch-engine is built.
- */
-async function loadDispatchEngine() {
-  try {
-    const { spinText, applyAntiDetection } = await import('@promospot/dispatch-engine');
-    return { spinText, applyAntiDetection };
-  } catch {
-    logger.warn('dispatch-engine not yet built, using passthrough');
-    return {
-      spinText: (t: string) => t,
-      applyAntiDetection: (t: string) => t,
-    };
+/** Per-session circuit breakers */
+const circuitBreakers = new Map<string, CircuitBreaker>();
+
+function getCircuitBreaker(sessionId: string): CircuitBreaker {
+  let cb = circuitBreakers.get(sessionId);
+  if (!cb) {
+    cb = new CircuitBreaker();
+    circuitBreakers.set(sessionId, cb);
   }
+  return cb;
 }
 
 /**
@@ -43,16 +42,30 @@ async function processDispatchJob(job: Job<DispatchJobData>): Promise<void> {
   // Update item status to SENDING
   await prisma.dispatchItem.update({
     where: { id: dispatchItemId },
-    data: { status: 'SENDING', jobId: job.id, attempts: { increment: 1 } },
+    data: { status: 'PENDING', jobId: job.id, attempts: { increment: 1 } },
   });
 
   try {
-    // Load dispatch engine (spintax, anti-detection)
-    const engine = await loadDispatchEngine();
+    // Enforce dispatch window (09-12h + 14-18h BRT)
+    if (!isWithinDispatchWindow()) {
+      throw new Error('Outside dispatch window (09-12h, 14-18h BRT). Job will be retried.');
+    }
 
-    // Apply spintax to generate unique copy
-    let copy = engine.spinText(copyTemplate);
-    copy = engine.applyAntiDetection(copy);
+    // Check circuit breaker for this session
+    const cb = getCircuitBreaker(sessionId);
+    if (!cb.canExecute()) {
+      throw new Error(`Circuit breaker OPEN for session ${sessionId}. Retry after cooldown.`);
+    }
+
+    // Check warm-up limits
+    const session = await prisma.waSession.findUnique({ where: { id: sessionId } });
+    if (session && !canSendMessage(session.warmupDay, session.dailyMsgCount)) {
+      throw new Error(`Daily warm-up limit reached for session ${sessionId} (day ${session.warmupDay}, sent ${session.dailyMsgCount})`);
+    }
+
+    // Apply spintax + anti-detection for unique copy
+    let copy = spinText(copyTemplate);
+    copy = applyAntiDetection(copy);
 
     // Store rendered copy
     await prisma.dispatchItem.update({
@@ -60,23 +73,25 @@ async function processDispatchJob(job: Job<DispatchJobData>): Promise<void> {
       data: { copyRendered: copy },
     });
 
-    // Get WA session and send message
-    // In production, this would call the WA Manager via IPC or direct import
-    // For now, we simulate the send with a delay
-    const waManagerAvailable = false; // TODO: integrate with wa-manager
+    // Simulate typing then send via WA Manager
+    const sock = waManager.getSession(sessionId);
+    if (sock) {
+      // Real send path: typing simulation → send
+      const typeDuration = typingDuration(copy.length);
+      await waManager.simulateTyping(sessionId, waGroupJid, typeDuration);
 
-    if (waManagerAvailable) {
-      // TODO: Real implementation
-      // const waManager = getWaManager();
-      // await waManager.simulateTyping(sessionId, waGroupJid, typingDuration(copy.length));
-      // if (mediaUrl) {
-      //   await waManager.sendImageMessage(sessionId, waGroupJid, mediaUrl, copy);
-      // } else {
-      //   await waManager.sendTextMessage(sessionId, waGroupJid, copy);
-      // }
+      if (mediaUrl && mediaType === 'image') {
+        await waManager.sendImageMessage(sessionId, waGroupJid, mediaUrl, copy);
+      } else {
+        await waManager.sendTextMessage(sessionId, waGroupJid, copy);
+      }
+
+      cb.recordSuccess();
     } else {
-      // Simulate sending (dev mode)
-      logger.info({ groupJid: waGroupJid, copyLength: copy.length }, 'Simulating message send');
+      // Dev/mock mode: simulate with gaussian delay
+      const delay = humanDelay();
+      logger.info({ groupJid: waGroupJid, copyLength: copy.length, delay }, 'Simulating message send (no active session)');
+      await new Promise(resolve => setTimeout(resolve, Math.min(delay, 5000)));
     }
 
     const latencyMs = Date.now() - start;
@@ -104,11 +119,10 @@ async function processDispatchJob(job: Job<DispatchJobData>): Promise<void> {
     });
 
     // Update group stats
-    await prisma.waGroup.update({
+    await prisma.group.update({
       where: { id: groupId },
       data: {
-        msgsSent: { increment: 1 },
-        lastDispatch: new Date(),
+        updatedAt: new Date(),
       },
     });
 
@@ -116,7 +130,7 @@ async function processDispatchJob(job: Job<DispatchJobData>): Promise<void> {
     await checkDispatchComplete(dispatchId);
 
     // Publish progress event via Redis pub/sub
-    await redis.publish(`dispatch:${dispatchId}`, JSON.stringify({
+    await redisClient.publish(`dispatch:${dispatchId}`, JSON.stringify({
       type: 'item_sent',
       dispatchItemId,
       groupId,
@@ -133,6 +147,18 @@ async function processDispatchJob(job: Job<DispatchJobData>): Promise<void> {
   } catch (err) {
     const latencyMs = Date.now() - start;
     const errorMsg = err instanceof Error ? err.message : String(err);
+
+    // Record failure in circuit breaker
+    const cb = getCircuitBreaker(sessionId);
+    const circuitOpened = cb.recordFailure();
+    if (circuitOpened) {
+      logger.warn({ sessionId }, 'Circuit breaker OPENED — session paused for 1 hour');
+      // Update session health in DB
+      await prisma.waSession.update({
+        where: { id: sessionId },
+        data: { healthScore: { decrement: 20 } },
+      }).catch(() => {});
+    }
 
     await prisma.dispatchItem.update({
       where: { id: dispatchItemId },
@@ -151,12 +177,21 @@ async function processDispatchJob(job: Job<DispatchJobData>): Promise<void> {
 
     await checkDispatchComplete(dispatchId);
 
+    // Publish failure event
+    await redisClient.publish(`dispatch:${dispatchId}`, JSON.stringify({
+      type: 'item_failed',
+      dispatchItemId,
+      groupId,
+      error: errorMsg,
+    })).catch(() => {});
+
     logger.error({
       jobId: job.id,
       dispatchId,
       groupId,
       error: errorMsg,
       attempt: job.attemptsMade + 1,
+      circuitState: cb.getState().state,
     }, 'Dispatch job failed');
 
     throw err; // BullMQ will retry based on backoff config
@@ -185,7 +220,7 @@ async function checkDispatchComplete(dispatchId: string): Promise<void> {
   });
 
   const statusMap = new Map(itemCounts.map(c => [c.status, c._count]));
-  const pending = (statusMap.get('PENDING') ?? 0) + (statusMap.get('QUEUED') ?? 0) + (statusMap.get('SENDING') ?? 0);
+  const pending = statusMap.get('PENDING') ?? 0;
   const sent = statusMap.get('SENT') ?? 0;
   const failed = statusMap.get('FAILED') ?? 0;
 
@@ -264,7 +299,7 @@ for (const signal of signals) {
     await dispatchWorker.close();
     await priorityWorker.close();
     await prisma.$disconnect();
-    redis.disconnect();
+    redisClient.disconnect();
     process.exit(0);
   });
 }

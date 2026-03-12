@@ -42,7 +42,7 @@ export function createCommandComposer(tenantId: string, services: TelegramServic
   composer.command('start', async (ctx) => {
     logger.info({ tenantId, chatId: ctx.chat?.id }, '/start command received');
     await ctx.reply(
-      `Bem-vindo ao PromoSpot! Seu assistente de promos.\n\n` +
+      `Bem-vindo ao Dispara! Seu assistente de promos.\n\n` +
         `Comandos disponiveis:\n` +
         `/promos - Ver promos ativas\n` +
         `/dispatch - Disparar promos para canais (admin)\n` +
