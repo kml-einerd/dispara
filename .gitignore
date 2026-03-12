@@ -34,3 +34,4 @@ wa-sessions/
 # OS
 .DS_Store
 Thumbs.db
+.github/workflows/
