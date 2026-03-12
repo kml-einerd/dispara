@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// Skip in CI - requires database connection
+const describeIntegration = process.env.DATABASE_URL ? describe : describe.skip;
+
 // Mock Anthropic SDK at the top level
 const mockCreate = vi.fn();
 
@@ -50,7 +53,7 @@ function makeAnthropicResponse(text: string) {
   };
 }
 
-describe('Agent Flow Integration', () => {
+describeIntegration('Agent Flow Integration', () => {
   let queryFn: ReturnType<typeof vi.fn>;
   let engine: AgentEngine;
   let config: AgentConfig;

@@ -81,7 +81,7 @@ export const MARKETPLACE_CONFIGS: Record<MarketplaceType, {
     urlPatterns: [
       /amazon\.com\.br/i,
       /amzn\.to/i,
-      /a\.co/i,
+      /^https?:\/\/a\.co\//i,
     ],
   },
   MERCADOLIVRE: {
