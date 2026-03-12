@@ -4,8 +4,16 @@ import { supabaseAdmin } from '../lib/supabase.js';
 /** Routes that do not require authentication */
 const PUBLIC_PREFIXES = ['/v1/health', '/v1/auth', '/health', '/v1/telegram/webhook'];
 
-function isPublicRoute(url: string): boolean {
-  return PUBLIC_PREFIXES.some((prefix) => url.startsWith(prefix));
+function isPublicRoute(url: string, method?: string): boolean {
+  if (PUBLIC_PREFIXES.some((prefix) => url.startsWith(prefix))) return true;
+
+  // Public GET on feeds (slug lookup) and links (code lookup, click, stats)
+  const m = (method || 'GET').toUpperCase();
+  if (m === 'GET' && url.match(/^\/v1\/feeds\/[^/]+$/)) return true;
+  if (m === 'GET' && url.match(/^\/v1\/links\/[^/]+/)) return true;
+  if (m === 'POST' && url.match(/^\/v1\/links\/[^/]+\/click$/)) return true;
+
+  return false;
 }
 
 const isDev = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === undefined;
@@ -26,7 +34,7 @@ export async function tenantMiddleware(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<void> {
-  if (isPublicRoute(request.url)) {
+  if (isPublicRoute(request.url, request.method)) {
     request.tenantId = '';
     request.userId = '';
     return;

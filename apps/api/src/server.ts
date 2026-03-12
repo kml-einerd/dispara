@@ -13,7 +13,11 @@ import { agentRoutes } from './modules/agent/routes.js';
 import { telegramRoutes } from './modules/telegram/routes.js';
 import { telegramWebhookRoutes } from './modules/webhooks/telegram.js';
 import { authRoutes } from './modules/auth/routes.js';
+import { gateRoutes } from './modules/gate/routes.js';
+import { feedRoutes } from './modules/feeds/routes.js';
+import { linkRoutes } from './modules/links/routes.js';
 import { tenantMiddleware } from './middleware/tenant.js';
+import { usageGateMiddleware } from './middleware/usage-gate.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { WebSocketGateway } from './plugins/websocket-gateway.js';
 import { prisma } from './lib/prisma.js';
@@ -76,6 +80,7 @@ waManager.on('banned', ({ sessionId, tenantId }) => {
 
 // ── Global hooks ──
 app.addHook('onRequest', tenantMiddleware);
+app.addHook('onRequest', usageGateMiddleware);
 
 // ── Error handler ──
 app.setErrorHandler(errorHandler);
@@ -90,6 +95,9 @@ await app.register(agentRoutes, { prefix: '/v1/agent' });
 await app.register(telegramRoutes, { prefix: '/v1/telegram' });
 await app.register(telegramWebhookRoutes, { prefix: '/v1/telegram/webhook' });
 await app.register(authRoutes, { prefix: '/v1/auth' });
+await app.register(gateRoutes, { prefix: '/v1/gate' });
+await app.register(feedRoutes, { prefix: '/v1/feeds' });
+await app.register(linkRoutes, { prefix: '/v1/links' });
 
 // ── Graceful shutdown ──
 const signals = ['SIGTERM', 'SIGINT'] as const;
