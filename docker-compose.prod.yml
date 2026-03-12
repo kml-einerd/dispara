@@ -2,11 +2,10 @@ services:
   api:
     image: dispara-prod:latest
     restart: unless-stopped
-    ports:
-      - "3001:3001"
+    network_mode: "host"
     env_file: .env
     environment:
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://127.0.0.1:6379
     depends_on:
       redis:
         condition: service_healthy
@@ -14,10 +13,11 @@ services:
   worker:
     image: dispara-prod:latest
     restart: unless-stopped
-    command: ["node", "workers/dispatch-worker/dist/index.js"]
+    command: ["node", "workers/dispatch-worker/dist/worker.js"]
+    network_mode: "host"
     env_file: .env
     environment:
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://127.0.0.1:6379
     depends_on:
       redis:
         condition: service_healthy

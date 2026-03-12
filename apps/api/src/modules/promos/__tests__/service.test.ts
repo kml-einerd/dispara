@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ── Mock Prisma ──
-const mockPrisma = {
+const mockPrisma = vi.hoisted(() => ({
   $transaction: vi.fn(),
   promo: {
     create: vi.fn(),
@@ -16,16 +16,18 @@ const mockPrisma = {
     update: vi.fn(),
     updateMany: vi.fn(),
   },
-};
+}));
 
 vi.mock('../../../lib/prisma.js', () => ({
   prisma: mockPrisma,
 }));
 
 // ── Mock promo-engine-mock ──
-const mockScrapeProduct = vi.fn();
-const mockSearchProduct = vi.fn();
-const mockGenerateCopyVariations = vi.fn();
+const { mockScrapeProduct, mockSearchProduct, mockGenerateCopyVariations } = vi.hoisted(() => ({
+  mockScrapeProduct: vi.fn(),
+  mockSearchProduct: vi.fn(),
+  mockGenerateCopyVariations: vi.fn(),
+}));
 
 vi.mock('../../../lib/promo-engine-mock.js', () => ({
   scrapeProduct: mockScrapeProduct,
