@@ -16,6 +16,7 @@ import { authRoutes } from './modules/auth/routes.js';
 import { gateRoutes } from './modules/gate/routes.js';
 import { feedRoutes } from './modules/feeds/routes.js';
 import { linkRoutes } from './modules/links/routes.js';
+import { oauthRoutes } from './modules/oauth/routes.js';
 import { tenantMiddleware } from './middleware/tenant.js';
 import { usageGateMiddleware } from './middleware/usage-gate.js';
 import { errorHandler } from './middleware/error-handler.js';
@@ -98,6 +99,7 @@ await app.register(authRoutes, { prefix: '/v1/auth' });
 await app.register(gateRoutes, { prefix: '/v1/gate' });
 await app.register(feedRoutes, { prefix: '/v1/feeds' });
 await app.register(linkRoutes, { prefix: '/v1/links' });
+await app.register(oauthRoutes, { prefix: '/v1/oauth' });
 
 // ── Graceful shutdown ──
 const signals = ['SIGTERM', 'SIGINT'] as const;

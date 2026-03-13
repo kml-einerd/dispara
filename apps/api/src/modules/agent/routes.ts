@@ -1,11 +1,15 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
+import { IntentClassifier } from '@dispara/agent-engine';
 import {
   updateAgentConfigSchema,
   agentInteractionsQuerySchema,
   agentStatsQuerySchema,
+  interactSchema,
 } from './schema.js';
+
+const classifier = new IntentClassifier();
 
 export async function agentRoutes(app: FastifyInstance): Promise<void> {
   // ── POST /v1/agent/config — Upsert agent config for tenant ──
@@ -206,6 +210,128 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
       topGroups,
       period,
       periodStart: periodStart.toISOString(),
+    });
+  });
+
+  // ── POST /v1/agent/interact — Copilot chat interaction ──
+  app.post('/interact', async (request: FastifyRequest, reply: FastifyReply) => {
+    const startTime = Date.now();
+    const input = interactSchema.parse(request.body);
+
+    // 1. Get or auto-create agent config for tenant
+    let config = await prisma.agentConfig.findFirst({
+      where: { tenantId: request.tenantId, agentType: 'conversational' },
+    });
+
+    if (!config) {
+      config = await prisma.agentConfig.create({
+        data: {
+          tenantId: request.tenantId,
+          agentType: 'conversational',
+          model: 'claude-sonnet-4-6',
+          temperature: 0.7,
+          maxTokens: 1024,
+          isActive: true,
+        },
+      });
+    }
+
+    // 2. Classify intent
+    const classification = await classifier.classifyIntent(input.message);
+
+    // 3. Search tenant's active promos in DB
+    const searchTerms = classification.entities.productName
+      ?? classification.entities.brand
+      ?? classification.entities.category
+      ?? input.message;
+
+    const promos = await prisma.promo.findMany({
+      where: {
+        tenantId: request.tenantId,
+        status: 'ACTIVE',
+        productName: { contains: searchTerms, mode: 'insensitive' },
+      },
+      include: { variations: true },
+      take: 5,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // If keyword search found nothing, fall back to latest active promos
+    const results = promos.length > 0
+      ? promos
+      : await prisma.promo.findMany({
+          where: { tenantId: request.tenantId, status: 'ACTIVE' },
+          include: { variations: true },
+          take: 5,
+          orderBy: { createdAt: 'desc' },
+        });
+
+    // 4. Map promos to frontend Product format
+    const products = results.map((p) => ({
+      id: p.id,
+      name: p.productName,
+      originalPrice: Number(p.originalPrice),
+      promoPrice: Number(p.promoPrice),
+      discountPercent: p.discountPercent,
+      imageUrl: p.imageUrl ?? '',
+      productUrl: p.productUrl,
+      affiliateUrl: p.affiliateUrl,
+      marketplace: p.marketplace,
+      category: p.category ?? undefined,
+      variations: p.variations.map((v) => ({
+        id: v.id,
+        label: v.label,
+        copyText: v.copyText,
+        isDefault: v.isDefault,
+      })),
+    }));
+
+    // 5. Build a text response based on intent
+    let response: string;
+    const promoReady = products.length > 0 && classification.intent !== 'off_topic';
+
+    if (classification.intent === 'off_topic') {
+      response = 'Não entendi 😅 Tente digitar o nome de um produto, colar um link ou enviar uma foto!';
+    } else if (products.length === 0) {
+      response = 'Não encontrei promoções ativas no momento. Cadastre produtos na aba Promos primeiro!';
+    } else {
+      response = `Encontrei ${products.length} ${products.length === 1 ? 'produto' : 'produtos'}! Clique no que quiser para gerar o anúncio 👆`;
+    }
+
+    const latencyMs = Date.now() - startTime;
+
+    // 6. Save interaction for analytics
+    await prisma.agentInteraction.create({
+      data: {
+        agentConfigId: config.id,
+        userId: request.userId,
+        inputPayload: {
+          message: input.message,
+          context: input.context ?? null,
+          intent: classification.intent,
+          confidence: classification.confidence,
+        } as unknown as Prisma.InputJsonValue,
+        outputPayload: {
+          productCount: products.length,
+          intent: classification.intent,
+          promoReady,
+        } as unknown as Prisma.InputJsonValue,
+        latencyMs,
+        success: true,
+      },
+    });
+
+    app.log.info(
+      { tenantId: request.tenantId, intent: classification.intent, productCount: products.length, latencyMs },
+      'Copilot interact completed',
+    );
+
+    reply.status(200).send({
+      intent: classification.intent,
+      confidence: classification.confidence,
+      products,
+      response,
+      promoReady,
     });
   });
 }

@@ -22,6 +22,15 @@ export const agentStatsQuerySchema = z.object({
   period: z.enum(['day', 'week', 'month']).default('week'),
 });
 
+export const interactSchema = z.object({
+  message: z.string().min(1).max(2000),
+  context: z.object({
+    selectedProductId: z.string().optional(),
+    imageUrl: z.string().url().optional(),
+  }).optional(),
+});
+
+export type InteractInput = z.infer<typeof interactSchema>;
 export type UpdateAgentConfigInput = z.infer<typeof updateAgentConfigSchema>;
 export type AgentInteractionsQuery = z.infer<typeof agentInteractionsQuerySchema>;
 export type AgentStatsQuery = z.infer<typeof agentStatsQuerySchema>;
