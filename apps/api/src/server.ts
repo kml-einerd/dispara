@@ -40,7 +40,14 @@ app.decorate('redis', redis);
 
 // ── Plugins ──
 await app.register(cors, { origin: true });
-await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
+await app.register(rateLimit, {
+  max: 100,
+  timeWindow: '1 minute',
+  keyGenerator: (req) => {
+    // Per-tenant rate limiting (falls back to IP if no tenant)
+    return (req.headers['x-tenant-id'] as string) || req.ip;
+  },
+});
 await app.register(fastifyWebSocket);
 
 // ── WebSocket Gateway ──
