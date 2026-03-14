@@ -35,4 +35,12 @@ export const generateVariationsSchema = z.object({
 export type CreatePromoInput = z.infer<typeof createPromoSchema>;
 export type ListPromosInput = z.infer<typeof listPromosSchema>;
 export type UpdatePromoInput = z.infer<typeof updatePromoSchema>;
+export const generateCopySchema = z.object({
+  count: z.coerce.number().int().min(1).max(5).default(5),
+  tones: z
+    .array(z.enum(['urgente', 'casual', 'formal', 'divertido', 'escassez']))
+    .optional(),
+});
+
 export type GenerateVariationsInput = z.infer<typeof generateVariationsSchema>;
+export type GenerateCopyInput = z.infer<typeof generateCopySchema>;

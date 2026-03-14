@@ -1,5 +1,5 @@
 // Types
-export type { MarketplaceAdapter, SearchOptions, Product } from './types.js';
+export type { MarketplaceAdapter, SearchOptions, Product, Commission, DateRange } from './types.js';
 
 // Adapters
 export { AmazonAdapter } from './adapters/amazon.js';

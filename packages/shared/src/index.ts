@@ -38,7 +38,7 @@ export interface PromoData {
 export interface CopyVariation {
   label: string;
   text: string;
-  tone: 'urgente' | 'casual' | 'formal';
+  tone: 'urgente' | 'casual' | 'formal' | 'divertido' | 'escassez';
   charCount: number;
 }
 

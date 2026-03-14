@@ -1,4 +1,10 @@
-export type Intent = 'product_query' | 'price_check' | 'recommendation' | 'off_topic';
+export type Intent =
+  | 'busca_produto'
+  | 'gerar_copy'
+  | 'disparar'
+  | 'status'
+  | 'ajuda'
+  | 'off_topic';
 
 export interface ClassificationResult {
   intent: Intent;

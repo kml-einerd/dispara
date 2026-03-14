@@ -69,3 +69,23 @@ export interface Product {
   /** Additional marketplace-specific metadata */
   metadata?: Record<string, unknown>;
 }
+
+/** Date range for commission queries */
+export interface DateRange {
+  start: Date;
+  end: Date;
+}
+
+/** Normalized commission/conversion record */
+export interface Commission {
+  orderId: string;
+  itemId: string;
+  productName: string;
+  orderAmount: number;
+  commissionRate: number;
+  commissionAmount: number;
+  status: 'pending' | 'approved' | 'rejected';
+  orderDate: Date;
+  marketplace: string;
+  metadata?: Record<string, unknown>;
+}

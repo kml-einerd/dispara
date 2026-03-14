@@ -12,7 +12,7 @@ export const updateAgentConfigSchema = z.object({
 export const agentInteractionsQuerySchema = z.object({
   cursor: z.string().uuid().optional(),
   limit: z.coerce.number().min(1).max(100).default(20),
-  intent: z.enum(['PRODUCT_QUERY', 'PRICE_CHECK', 'RECOMMENDATION', 'OFF_TOPIC']).optional(),
+  intent: z.enum(['busca_produto', 'gerar_copy', 'disparar', 'status', 'ajuda', 'off_topic']).optional(),
   groupId: z.string().optional(),
   startDate: z.string().datetime().optional(),
   endDate: z.string().datetime().optional(),

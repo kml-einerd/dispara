@@ -2,6 +2,7 @@ import type { MarketplaceAdapter } from './types.js';
 import { AmazonAdapter } from './adapters/amazon.js';
 import { ShopeeAdapter } from './adapters/shopee.js';
 import { LomadeeAdapter } from './adapters/lomadee.js';
+import { MercadoLivreAdapter } from './adapters/mercadolivre.js';
 
 /**
  * Factory function to create marketplace adapters.
@@ -42,11 +43,18 @@ export function createMarketplaceAdapter(
       });
 
     case 'MAGALU':
-    case 'MERCADOLIVRE':
-      // Both use Lomadee as the affiliate network in Brazil
       return new LomadeeAdapter({
         apiKey: credentials.apiKey ?? credentials.api_key ?? '',
         sourceId: credentials.sourceId ?? credentials.source_id ?? '',
+      });
+
+    case 'MERCADOLIVRE':
+      return new MercadoLivreAdapter({
+        appId: credentials.appId ?? credentials.app_id ?? '',
+        appSecret: credentials.appSecret ?? credentials.app_secret,
+        accessToken: credentials.accessToken ?? credentials.access_token,
+        mattTool: credentials.mattTool ?? credentials.matt_tool,
+        mattWord: credentials.mattWord ?? credentials.matt_word,
       });
 
     case 'ALIEXPRESS':

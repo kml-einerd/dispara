@@ -1,223 +1,283 @@
-import type { MarketplaceAdapter, Product, SearchOptions } from '../types.js';
+import { createHash } from 'node:crypto';
+import type {
+  MarketplaceAdapter,
+  Product,
+  SearchOptions,
+  Commission,
+  DateRange,
+} from '../types.js';
 import { RateLimiter } from '../rate-limiter.js';
 
-interface ShopeeCredentials {
+const SHOPEE_GRAPHQL_URL = 'https://open-api.affiliate.shopee.com.br/graphql';
+
+export interface ShopeeCredentials {
   appId: string;
   appSecret: string;
 }
 
+interface ShopeeGraphQLResponse<T = unknown> {
+  data?: T;
+  errors?: Array<{ message: string; extensions?: { code: number } }>;
+}
+
+interface ProductOfferNode {
+  itemId: string;
+  productName: string;
+  productLink: string;
+  offerLink: string;
+  imageUrl: string;
+  price: number;
+  priceMin?: number;
+  priceMax?: number;
+  commissionRate: number;
+  commission: number;
+  sales: number;
+  ratingStar: number;
+  shop?: { shopId: string; shopName: string };
+}
+
+interface ConversionNode {
+  orderId: string;
+  itemId: string;
+  productName: string;
+  orderAmount: number;
+  commissionRate: number;
+  commission: number;
+  status: string;
+  orderTime: string;
+}
+
 /**
  * Shopee Affiliate Program GraphQL API adapter.
- * Uses Shopee's affiliate API for product search and link generation.
- *
- * Rate limit: 100 requests per minute as per Shopee affiliate API docs.
+ * Auth: HMAC SHA256 signature (AppId + Timestamp + Payload + Secret).
+ * Rate limit: ~100 req/min (community estimate, not officially documented).
  */
 export class ShopeeAdapter implements MarketplaceAdapter {
   readonly marketplace = 'SHOPEE';
   private readonly credentials: ShopeeCredentials;
   private readonly rateLimiter: RateLimiter;
+  private retryDelayMs = 1000;
 
   constructor(credentials: ShopeeCredentials) {
     this.credentials = credentials;
-    // 100 req/min = ~1.67 req/sec
     this.rateLimiter = new RateLimiter(10, 100 / 60);
   }
 
   /**
-   * Search products on Shopee via Affiliate API.
-   * STUB: Returns mock data with realistic Shopee BR products and BRL prices.
+   * Compute SHA256 signature: SHA256(AppId + Timestamp + Payload + Secret)
    */
-  async searchProducts(query: string, options?: SearchOptions): Promise<Product[]> {
+  private sign(payload: string, timestamp: string): string {
+    const raw = this.credentials.appId + timestamp + payload + this.credentials.appSecret;
+    return createHash('sha256').update(raw, 'utf-8').digest('hex');
+  }
+
+  /**
+   * Execute a GraphQL request against the Shopee Affiliate API.
+   */
+  private async graphql<T>(body: { query: string; variables?: Record<string, unknown> }): Promise<T> {
     await this.rateLimiter.acquire();
 
-    // STUB: Replace with real Shopee GraphQL API call when credentials provided
-    // Real implementation would call:
-    // POST https://affiliate.shopee.com.br/graphql
-    // mutation: generateShortLink / query: searchProducts
+    const payload = JSON.stringify(body);
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const signature = this.sign(payload, timestamp);
 
-    const allProducts: Product[] = [
-      {
-        id: 'shopee_1001',
-        name: 'Fone de Ouvido Bluetooth QCY T13 ANC TWS - Cancelamento de Ruido',
-        originalPrice: 149.90,
-        promoPrice: 59.90,
-        discountPercent: 60,
-        imageUrl: 'https://cf.shopee.com.br/file/sg-11134201-22100-kh4fone.jpg',
-        productUrl: 'https://shopee.com.br/product/123456/1001',
-        marketplace: 'SHOPEE',
-        category: 'Eletrônicos',
-        rating: 4.8,
-        soldCount: 150000,
-        metadata: { shopId: '123456', itemId: '1001' },
+    const response = await fetch(SHOPEE_GRAPHQL_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `SHA256 Credential=${this.credentials.appId},Timestamp=${timestamp},Signature=${signature}`,
       },
-      {
-        id: 'shopee_1002',
-        name: 'Relogio Smartwatch Xiaomi Redmi Watch 3 Active GPS Bluetooth',
-        originalPrice: 349.90,
-        promoPrice: 179.90,
-        discountPercent: 49,
-        imageUrl: 'https://cf.shopee.com.br/file/sg-11134201-22100-smartwatch.jpg',
-        productUrl: 'https://shopee.com.br/product/123456/1002',
-        marketplace: 'SHOPEE',
-        category: 'Relógios',
-        rating: 4.7,
-        soldCount: 85000,
-        metadata: { shopId: '123456', itemId: '1002' },
-      },
-      {
-        id: 'shopee_1003',
-        name: 'Kit 5 Cuecas Box Microfibra Lisa Premium Confort Masculina',
-        originalPrice: 79.90,
-        promoPrice: 29.90,
-        discountPercent: 63,
-        imageUrl: 'https://cf.shopee.com.br/file/sg-11134201-22100-cuecas.jpg',
-        productUrl: 'https://shopee.com.br/product/789012/1003',
-        marketplace: 'SHOPEE',
-        category: 'Moda Masculina',
-        rating: 4.5,
-        soldCount: 200000,
-        metadata: { shopId: '789012', itemId: '1003' },
-      },
-      {
-        id: 'shopee_1004',
-        name: 'Pelicula Vidro Temperado iPhone 15 Pro Max 9D Cobertura Total',
-        originalPrice: 39.90,
-        promoPrice: 9.90,
-        discountPercent: 75,
-        imageUrl: 'https://cf.shopee.com.br/file/sg-11134201-22100-pelicula.jpg',
-        productUrl: 'https://shopee.com.br/product/345678/1004',
-        marketplace: 'SHOPEE',
-        category: 'Celulares e Acessórios',
-        rating: 4.6,
-        soldCount: 500000,
-        metadata: { shopId: '345678', itemId: '1004' },
-      },
-      {
-        id: 'shopee_1005',
-        name: 'Aspirador de Po Robo Xiaomi E10 Mop 2 em 1 Wi-Fi Alexa',
-        originalPrice: 999.90,
-        promoPrice: 649.90,
-        discountPercent: 35,
-        imageUrl: 'https://cf.shopee.com.br/file/sg-11134201-22100-robo.jpg',
-        productUrl: 'https://shopee.com.br/product/567890/1005',
-        marketplace: 'SHOPEE',
-        category: 'Eletrodomésticos',
-        rating: 4.4,
-        soldCount: 30000,
-        metadata: { shopId: '567890', itemId: '1005' },
-      },
-      {
-        id: 'shopee_1006',
-        name: 'Tenis Nike Revolution 6 Masculino Corrida Original',
-        originalPrice: 349.99,
-        promoPrice: 199.90,
-        discountPercent: 43,
-        imageUrl: 'https://cf.shopee.com.br/file/sg-11134201-22100-nike.jpg',
-        productUrl: 'https://shopee.com.br/product/901234/1006',
-        marketplace: 'SHOPEE',
-        category: 'Calçados',
-        rating: 4.6,
-        soldCount: 75000,
-        metadata: { shopId: '901234', itemId: '1006' },
-      },
-      {
-        id: 'shopee_1007',
-        name: 'Base Liquida Matte Ruby Rose HB-8053 Cobertura Total 29ml',
-        originalPrice: 29.90,
-        promoPrice: 14.90,
-        discountPercent: 50,
-        imageUrl: 'https://cf.shopee.com.br/file/sg-11134201-22100-base.jpg',
-        productUrl: 'https://shopee.com.br/product/112233/1007',
-        marketplace: 'SHOPEE',
-        category: 'Beleza',
-        rating: 4.3,
-        soldCount: 180000,
-        metadata: { shopId: '112233', itemId: '1007' },
-      },
-      {
-        id: 'shopee_1008',
-        name: 'Limpador Multiuso Veja Limpeza Pesada 500ml Pack 6 Unidades',
-        originalPrice: 49.90,
-        promoPrice: 32.90,
-        discountPercent: 34,
-        imageUrl: 'https://cf.shopee.com.br/file/sg-11134201-22100-veja.jpg',
-        productUrl: 'https://shopee.com.br/product/445566/1008',
-        marketplace: 'SHOPEE',
-        category: 'Casa e Limpeza',
-        rating: 4.7,
-        soldCount: 60000,
-        metadata: { shopId: '445566', itemId: '1008' },
-      },
-    ];
+      body: payload,
+    });
 
-    let filtered = allProducts.filter(p =>
-      p.name.toLowerCase().includes(query.toLowerCase()) ||
-      p.category?.toLowerCase().includes(query.toLowerCase()) ||
-      query.toLowerCase().split(' ').some(term => p.name.toLowerCase().includes(term))
-    );
-
-    if (filtered.length === 0) {
-      filtered = allProducts;
+    if (response.status === 429) {
+      const delay = this.retryDelayMs;
+      this.retryDelayMs = Math.min(this.retryDelayMs * 2, 30000);
+      await new Promise(r => setTimeout(r, delay));
+      this.retryDelayMs = 1000;
+      return this.graphql<T>(body);
     }
+
+    if (!response.ok) {
+      throw new Error(`Shopee API HTTP ${response.status}: ${await response.text()}`);
+    }
+
+    const json = (await response.json()) as ShopeeGraphQLResponse<T>;
+
+    if (json.errors?.length) {
+      const err = json.errors[0]!;
+      throw new Error(`Shopee GraphQL error ${err.extensions?.code ?? 'unknown'}: ${err.message}`);
+    }
+
+    if (!json.data) {
+      throw new Error('Shopee API returned empty data');
+    }
+
+    return json.data;
+  }
+
+  private mapSortBy(sortBy?: string): number {
+    switch (sortBy) {
+      case 'price': return 3;
+      case 'discount': return 4;
+      default: return 5; // relevance
+    }
+  }
+
+  async searchProducts(query: string, options?: SearchOptions): Promise<Product[]> {
+    const limit = Math.min(options?.limit ?? 20, 50);
+
+    const data = await this.graphql<{
+      productOfferV2: { nodes: ProductOfferNode[] };
+    }>({
+      query: `
+        query ProductSearch($keyword: String!, $limit: Int!, $sortType: Int!) {
+          productOfferV2(keyword: $keyword, listType: 1, sortType: $sortType, page: 1, limit: $limit) {
+            nodes {
+              itemId
+              productName
+              productLink
+              offerLink
+              imageUrl
+              price
+              priceMin
+              priceMax
+              commissionRate
+              commission
+              sales
+              ratingStar
+              shop { shopId shopName }
+            }
+          }
+        }
+      `,
+      variables: {
+        keyword: query,
+        limit,
+        sortType: this.mapSortBy(options?.sortBy),
+      },
+    });
+
+    let products = (data.productOfferV2.nodes ?? []).map((node): Product => {
+      const originalPrice = node.priceMax ?? node.price;
+      const promoPrice = node.priceMin ?? node.price;
+      const discountPercent =
+        originalPrice > promoPrice
+          ? Math.round(((originalPrice - promoPrice) / originalPrice) * 100)
+          : 0;
+
+      return {
+        id: node.itemId,
+        name: node.productName,
+        originalPrice,
+        promoPrice,
+        discountPercent,
+        imageUrl: node.imageUrl,
+        productUrl: node.productLink,
+        marketplace: 'SHOPEE',
+        rating: node.ratingStar,
+        soldCount: node.sales,
+        metadata: {
+          offerLink: node.offerLink,
+          commissionRate: node.commissionRate,
+          commission: node.commission,
+          shopId: node.shop?.shopId,
+          shopName: node.shop?.shopName,
+        },
+      };
+    });
 
     if (options?.minPrice !== undefined) {
-      filtered = filtered.filter(p => p.promoPrice >= options.minPrice!);
+      products = products.filter(p => p.promoPrice >= options.minPrice!);
     }
     if (options?.maxPrice !== undefined) {
-      filtered = filtered.filter(p => p.promoPrice <= options.maxPrice!);
+      products = products.filter(p => p.promoPrice <= options.maxPrice!);
     }
 
-    if (options?.sortBy === 'price') {
-      filtered.sort((a, b) => a.promoPrice - b.promoPrice);
-    } else if (options?.sortBy === 'discount') {
-      filtered.sort((a, b) => b.discountPercent - a.discountPercent);
-    }
-
-    const limit = options?.limit ?? 10;
-    return filtered.slice(0, limit);
+    return products;
   }
 
-  /**
-   * Generates a Shopee affiliate short link via GraphQL API.
-   * STUB: Returns a mock short link. Real implementation would call generateShortLink mutation.
-   */
-  async generateAffiliateLink(productUrl: string): Promise<string> {
-    await this.rateLimiter.acquire();
-
-    // STUB: Replace with real Shopee GraphQL generateShortLink mutation
-    // Real implementation would call:
-    // POST https://affiliate.shopee.com.br/graphql
-    // mutation { generateShortLink(input: { originUrl: $productUrl }) { shortLink } }
-
-    const shortCode = Math.random().toString(36).substring(2, 8);
-    return `https://shp.ee/aff_${shortCode}`;
-  }
-
-  /**
-   * Get product details from Shopee product URL.
-   * STUB: Returns mock product data.
-   */
-  async getProductDetails(productUrl: string): Promise<Product> {
-    await this.rateLimiter.acquire();
-
-    // STUB: Replace with real Shopee API call when credentials provided
-    const urlMatch = productUrl.match(/product\/(\d+)\/(\d+)/);
-    const shopId = urlMatch?.[1] ?? '123456';
-    const itemId = urlMatch?.[2] ?? '1001';
-
-    return {
-      id: `shopee_${itemId}`,
-      name: 'Fone de Ouvido Bluetooth QCY T13 ANC TWS - Cancelamento de Ruido',
-      originalPrice: 149.90,
-      promoPrice: 59.90,
-      discountPercent: 60,
-      imageUrl: 'https://cf.shopee.com.br/file/sg-11134201-22100-kh4fone.jpg',
-      productUrl,
-      marketplace: 'SHOPEE',
-      category: 'Eletrônicos',
-      rating: 4.8,
-      soldCount: 150000,
-      metadata: { shopId, itemId, fetchedAt: new Date().toISOString() },
+  async generateAffiliateLink(productUrl: string, subIds?: string[]): Promise<string> {
+    const variables: Record<string, unknown> = {
+      input: { originUrl: productUrl },
     };
+    if (subIds?.length) {
+      (variables.input as Record<string, unknown>).subIds = subIds;
+    }
+
+    const data = await this.graphql<{
+      generateShortLink: { shortLink: string };
+    }>({
+      query: `
+        mutation GenerateShortLink($input: GenerateShortLinkInput!) {
+          generateShortLink(input: $input) {
+            shortLink
+          }
+        }
+      `,
+      variables,
+    });
+
+    return data.generateShortLink.shortLink;
+  }
+
+  async getProductDetails(productUrl: string): Promise<Product> {
+    // Extract item name/id from Shopee URL for keyword search
+    const urlMatch = productUrl.match(/i\.(\d+)\.(\d+)/);
+    const keyword = urlMatch ? urlMatch[2]! : productUrl.split('/').pop()?.replace(/-/g, ' ') ?? '';
+
+    const results = await this.searchProducts(keyword, { limit: 1 });
+
+    if (results.length > 0) {
+      return { ...results[0]!, productUrl };
+    }
+
+    throw new Error(`Product not found for URL: ${productUrl}`);
+  }
+
+  async getCommissions(dateRange: DateRange): Promise<Commission[]> {
+    const data = await this.graphql<{
+      conversionReport: { nodes: ConversionNode[] };
+    }>({
+      query: `
+        query ConversionReport($startDate: String!, $endDate: String!) {
+          conversionReport(startDate: $startDate, endDate: $endDate) {
+            nodes {
+              orderId
+              itemId
+              productName
+              orderAmount
+              commissionRate
+              commission
+              status
+              orderTime
+            }
+          }
+        }
+      `,
+      variables: {
+        startDate: dateRange.start.toISOString().split('T')[0],
+        endDate: dateRange.end.toISOString().split('T')[0],
+      },
+    });
+
+    return (data.conversionReport.nodes ?? []).map((node): Commission => ({
+      orderId: node.orderId,
+      itemId: node.itemId,
+      productName: node.productName,
+      orderAmount: node.orderAmount,
+      commissionRate: node.commissionRate,
+      commissionAmount: node.commission,
+      status: this.mapCommissionStatus(node.status),
+      orderDate: new Date(node.orderTime),
+      marketplace: 'SHOPEE',
+    }));
+  }
+
+  private mapCommissionStatus(status: string): Commission['status'] {
+    const s = status.toLowerCase();
+    if (s.includes('approv') || s.includes('confirm')) return 'approved';
+    if (s.includes('reject') || s.includes('cancel')) return 'rejected';
+    return 'pending';
   }
 }

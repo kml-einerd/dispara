@@ -5,26 +5,40 @@ const logger = pino({ name: 'intent-classifier' });
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-const CLASSIFICATION_SYSTEM_PROMPT = `You are an intent classifier for a promotional products bot in Brazilian Portuguese groups.
-Classify the user message into one of these intents:
-- product_query: user is asking about a specific product
-- price_check: user is asking about prices or deals
-- recommendation: user is asking for product recommendations or suggestions
-- off_topic: message is not related to products, prices, or shopping
+const VALID_INTENTS: Intent[] = [
+  'busca_produto',
+  'gerar_copy',
+  'disparar',
+  'status',
+  'ajuda',
+  'off_topic',
+];
 
-Return ONLY valid JSON with this structure:
+const CLASSIFICATION_SYSTEM_PROMPT = `Voce e um classificador de intencoes para um bot de promocoes em grupos brasileiros de WhatsApp/Telegram.
+
+Classifique a mensagem do usuario em UMA destas intencoes:
+
+- busca_produto: usuario pergunta sobre produto especifico, preco, oferta, recomendacao, ou quer encontrar algo pra comprar
+- gerar_copy: usuario quer criar texto/copy/anuncio para divulgar um produto ou promocao
+- disparar: usuario quer enviar/disparar mensagem para grupos, agendar envio, ou gerenciar filas de disparo
+- status: usuario pergunta sobre status de disparos, numeros, sessoes, filas, metricas ou configuracoes do sistema
+- ajuda: usuario pede ajuda, nao sabe usar o sistema, pergunta como funciona, ou pede instrucoes
+- off_topic: mensagem casual, cumprimentos, memes, conversas que nao tem relacao com produtos ou o sistema
+
+Retorne APENAS JSON valido com esta estrutura:
 {
-  "intent": "product_query" | "price_check" | "recommendation" | "off_topic",
-  "confidence": 0.0 to 1.0,
+  "intent": "busca_produto" | "gerar_copy" | "disparar" | "status" | "ajuda" | "off_topic",
+  "confidence": 0.0 a 1.0,
   "entities": {
-    "productName": "string or null",
-    "category": "string or null",
-    "maxPrice": number or null,
-    "brand": "string or null"
+    "productName": "string ou null",
+    "category": "string ou null",
+    "maxPrice": numero ou null,
+    "brand": "string ou null"
   }
 }
 
-Be strict: casual conversation, greetings, memes, and non-shopping messages are always off_topic.`;
+Seja estrito: conversa casual, saudacoes e memes sao sempre off_topic.
+Entidades so sao relevantes para busca_produto. Para outros intents, retorne entities vazio.`;
 
 const DEFAULT_RESULT: ClassificationResult = {
   intent: 'off_topic',
@@ -38,7 +52,7 @@ export class IntentClassifier {
 
   constructor(apiKey?: string, model?: string) {
     this.apiKey = apiKey ?? process.env['OPENROUTER_API_KEY'] ?? '';
-    this.model = model ?? 'anthropic/claude-sonnet-4-6';
+    this.model = model ?? 'anthropic/claude-haiku-4-5-20251001';
   }
 
   async classifyIntent(message: string): Promise<ClassificationResult> {
@@ -77,14 +91,14 @@ export class IntentClassifier {
         return DEFAULT_RESULT;
       }
 
-      const parsed = JSON.parse(content) as {
+      const cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+      const parsed = JSON.parse(cleaned) as {
         intent?: string;
         confidence?: number;
         entities?: ClassificationResult['entities'];
       };
 
-      const validIntents: Intent[] = ['product_query', 'price_check', 'recommendation', 'off_topic'];
-      if (!parsed.intent || !validIntents.includes(parsed.intent as Intent)) {
+      if (!parsed.intent || !VALID_INTENTS.includes(parsed.intent as Intent)) {
         logger.warn({ parsed, message }, 'Invalid intent in classification response');
         return DEFAULT_RESULT;
       }

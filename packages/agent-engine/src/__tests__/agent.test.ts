@@ -54,7 +54,7 @@ function makeProduct(overrides: Partial<ProductForRAG> = {}): ProductForRAG {
 
 function makeClassification(overrides: Partial<ClassificationResult> = {}): ClassificationResult {
   return {
-    intent: 'product_query',
+    intent: 'busca_produto',
     confidence: 0.9,
     entities: {},
     ...overrides,
@@ -94,7 +94,7 @@ describe('AgentEngine', () => {
     const respondMock = responder.generateResponse as ReturnType<typeof vi.fn>;
 
     classifyMock.mockResolvedValueOnce(makeClassification({
-      intent: 'product_query',
+      intent: 'busca_produto',
       entities: { productName: 'iPhone 15' },
     }));
     searchMock.mockResolvedValueOnce([
@@ -108,7 +108,7 @@ describe('AgentEngine', () => {
     expect(searchMock).toHaveBeenCalledWith('tenant-1', 'quero um iPhone 15', { productName: 'iPhone 15' });
     expect(respondMock).toHaveBeenCalledOnce();
     expect(result.response).toContain('iPhone 15');
-    expect(result.interaction.intent).toBe('product_query');
+    expect(result.interaction.intent).toBe('busca_produto');
     expect(result.interaction.productIds).toEqual(['p1']);
   });
 
@@ -320,6 +320,24 @@ describe('AgentEngine', () => {
     const result = await engine.processMessage('msg', 'group-1', 'telegram', 'Promos BR');
 
     expect(result.interaction.groupName).toBe('Promos BR');
+  });
+
+  it('non-RAG intents (gerar_copy, disparar, status, ajuda) skip product search', async () => {
+    const classifyMock = classifier.classifyIntent as ReturnType<typeof vi.fn>;
+    const respondMock = responder.generateResponse as ReturnType<typeof vi.fn>;
+
+    for (const intent of ['gerar_copy', 'disparar', 'status', 'ajuda'] as const) {
+      classifyMock.mockResolvedValueOnce(makeClassification({ intent }));
+      respondMock.mockResolvedValueOnce(`Resposta ${intent}`);
+      // Clear cooldown between iterations
+      engine.clearCooldowns();
+      currentTime += 200_000;
+      dateNowSpy.mockReturnValue(currentTime);
+
+      const result = await engine.processMessage(`msg ${intent}`, 'group-1', 'telegram');
+      expect(result.response).toContain(`Resposta ${intent}`);
+      expect(rag.searchProducts).not.toHaveBeenCalled();
+    }
   });
 
   it('defaults groupName to groupId when not provided', async () => {

@@ -5,6 +5,7 @@ import {
   listPromosSchema,
   updatePromoSchema,
   generateVariationsSchema,
+  generateCopySchema,
 } from './schemas.js';
 
 export async function promoRoutes(app: FastifyInstance): Promise<void> {
@@ -107,6 +108,54 @@ export async function promoRoutes(app: FastifyInstance): Promise<void> {
           return;
         }
         throw err;
+      }
+    },
+  );
+
+  // ── POST /v1/promos/:id/generate-copy — Generate copy with SSE streaming ──
+  app.post(
+    '/:id/generate-copy',
+    async (
+      request: FastifyRequest<{ Params: { id: string } }>,
+      reply: FastifyReply,
+    ) => {
+      const { count } = generateCopySchema.parse(request.body ?? {});
+
+      reply.raw.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      });
+
+      try {
+        const stream = PromoService.generateCopyStream(
+          request.tenantId,
+          request.params.id,
+          count,
+        );
+
+        let index = 0;
+        for await (const variation of stream) {
+          reply.raw.write(
+            `data: ${JSON.stringify({ index, ...variation })}\n\n`,
+          );
+          index++;
+        }
+
+        reply.raw.write(`event: done\ndata: ${JSON.stringify({ total: index })}\n\n`);
+      } catch (err) {
+        if (err instanceof NotFoundError) {
+          reply.raw.write(
+            `event: error\ndata: ${JSON.stringify({ code: 'NOT_FOUND', message: err.message })}\n\n`,
+          );
+        } else {
+          reply.raw.write(
+            `event: error\ndata: ${JSON.stringify({ code: 'INTERNAL', message: 'Failed to generate copy' })}\n\n`,
+          );
+        }
+      } finally {
+        reply.raw.end();
       }
     },
   );

@@ -3,7 +3,7 @@ import pino from 'pino';
 import { IntentClassifier } from './classifier.js';
 import { ProductRAG } from './rag.js';
 import { ConversationalResponder } from './responder.js';
-import type { AgentConfig, AgentInteraction } from './types.js';
+import type { AgentConfig, AgentInteraction, Intent } from './types.js';
 
 const logger = pino({ name: 'agent-engine' });
 
@@ -17,6 +17,12 @@ export interface ProcessMessageResult {
   response: string | null;
   interaction: AgentInteraction;
 }
+
+/** Intents that trigger RAG product search */
+const RAG_INTENTS: Intent[] = ['busca_produto'];
+
+/** Intents the agent should respond to (non-off_topic) */
+const ACTIONABLE_INTENTS: Intent[] = ['busca_produto', 'gerar_copy', 'disparar', 'status', 'ajuda'];
 
 export class AgentEngine {
   private classifier: IntentClassifier;
@@ -86,17 +92,15 @@ export class AgentEngine {
     );
 
     // 4. If off_topic, return null (silence)
-    if (classification.intent === 'off_topic') {
+    if (!ACTIONABLE_INTENTS.includes(classification.intent)) {
       baseInteraction.responseTimeMs = Date.now() - startTime;
       return { response: null, interaction: baseInteraction };
     }
 
-    // 5. Search products via RAG
-    const ragResults = await this.rag.searchProducts(
-      this.config.tenantId,
-      message,
-      classification.entities,
-    );
+    // 5. Search products via RAG only for product-related intents
+    const ragResults = RAG_INTENTS.includes(classification.intent)
+      ? await this.rag.searchProducts(this.config.tenantId, message, classification.entities)
+      : [];
     baseInteraction.productIds = ragResults.map((r) => r.product.id);
 
     // 6. Generate response
@@ -139,12 +143,10 @@ export class AgentEngine {
     const now = Date.now();
     const cooldownMs = this.config.cooldownMinutes * 60 * 1000;
 
-    // Check time-based cooldown
     if (now - entry.lastResponseAt < cooldownMs) {
       return true;
     }
 
-    // Check hourly rate limit
     const oneHour = 60 * 60 * 1000;
     if (now - entry.hourStart < oneHour && entry.responsesThisHour >= this.config.maxResponsesPerHour) {
       return true;
