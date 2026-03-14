@@ -1,6 +1,5 @@
 import { useAuthStore } from '../store/auth';
 import { supabase } from './supabase';
-import { mockSessions, mockGroups, mockProducts, mockPromos, mockDispatches, mockAffiliateAccounts, mockGateStatus, mockDispatchesExtended } from './api-mock';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/v1';
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
@@ -9,24 +8,22 @@ async function fetcher(url: string, options: RequestInit = {}) {
   const { token, tenantId } = useAuthStore.getState();
 
   if (USE_MOCK) {
-    console.log(`[MOCK API] ${options.method || 'GET'} ${url}`);
-    await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
+    const mock = await import('./api-mock');
+    await new Promise(resolve => setTimeout(resolve, 300));
 
     if (url.includes('/wa/sessions')) {
       if (url.endsWith('/qr')) return { qr: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', status: 'PENDING' };
       if (url.endsWith('/health')) return { healthScore: 85, warmupDay: 10, dailyMsgCount: 50 };
-      return { sessions: mockSessions };
+      return { sessions: mock.mockSessions };
     }
-    if (url.includes('/groups')) return { data: mockGroups, pagination: { total: 3 } };
-    if (url.includes('/promos')) {
-      return { data: mockPromos, pagination: { total: 1 } };
-    }
-    if (url.includes('/dispatches')) return { data: mockDispatchesExtended, pagination: { total: mockDispatchesExtended.length } };
-    if (url.includes('/oauth/accounts')) return { accounts: mockAffiliateAccounts };
+    if (url.includes('/groups')) return { data: mock.mockGroups, pagination: { total: 3 } };
+    if (url.includes('/promos')) return { data: mock.mockPromos, pagination: { total: 1 } };
+    if (url.includes('/dispatches')) return { data: mock.mockDispatchesExtended, pagination: { total: mock.mockDispatchesExtended.length } };
+    if (url.includes('/oauth/accounts')) return { accounts: mock.mockAffiliateAccounts };
     if (url.includes('/oauth/mercadolivre/connect')) return { url: 'https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=MOCK' };
-    if (url.includes('/oauth/shopee/connect')) return { account: mockAffiliateAccounts[0] };
-    if (url.includes('/affiliate-accounts')) return { accounts: mockAffiliateAccounts };
-    if (url.includes('/gate/status')) return mockGateStatus;
+    if (url.includes('/oauth/shopee/connect')) return { account: mock.mockAffiliateAccounts[0] };
+    if (url.includes('/affiliate-accounts')) return { accounts: mock.mockAffiliateAccounts };
+    if (url.includes('/gate/status')) return mock.mockGateStatus;
 
     return {};
   }

@@ -131,8 +131,7 @@ export function SettingsPage() {
     },
   });
 
-  const onSubmit = (data: ProfileFormValues) => {
-    console.log(data);
+  const onSubmit = (_data: ProfileFormValues) => {
     toast({
       title: "Perfil atualizado",
       description: "Suas informações foram salvas com sucesso.",

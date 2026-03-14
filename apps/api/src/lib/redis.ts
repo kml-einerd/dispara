@@ -1,4 +1,7 @@
 import { Redis } from 'ioredis';
+import pino from 'pino';
+
+const logger = pino({ name: 'redis' });
 
 export const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
   maxRetriesPerRequest: null, // required by BullMQ
@@ -10,11 +13,11 @@ export const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379'
 });
 
 redis.on('error', (err: Error) => {
-  console.error('[Redis] Connection error:', err.message);
+  logger.error({ err: err.message }, 'Redis connection error');
 });
 
 redis.on('connect', () => {
-  console.log('[Redis] Connected');
+  logger.info('Redis connected');
 });
 
 /** BullMQ connection config — pass to Queue / Worker constructors */
