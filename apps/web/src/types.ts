@@ -3,7 +3,7 @@
 // Last sync: 2026-03-13
 // ============================================
 
-export type Marketplace = 'SHOPEE' | 'AMAZON' | 'MERCADOLIVRE' | 'MAGALU' | 'ALIEXPRESS';
+export type Marketplace = 'SHOPEE' | 'AMAZON' | 'MERCADOLIVRE' | 'MAGALU';
 
 export type WaSessionStatus = 'CONNECTED' | 'DISCONNECTED' | 'BANNED' | 'WARMING_UP';
 

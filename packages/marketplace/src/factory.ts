@@ -7,7 +7,7 @@ import { MercadoLivreAdapter } from './adapters/mercadolivre.js';
 /**
  * Factory function to create marketplace adapters.
  *
- * @param marketplace - Marketplace identifier (AMAZON, SHOPEE, MAGALU, MERCADOLIVRE, ALIEXPRESS)
+ * @param marketplace - Marketplace identifier (AMAZON, SHOPEE, MAGALU, MERCADOLIVRE)
  * @param credentials - Marketplace-specific credentials
  * @returns A configured MarketplaceAdapter instance
  * @throws Error if the marketplace is not supported
@@ -57,18 +57,10 @@ export function createMarketplaceAdapter(
         mattWord: credentials.mattWord ?? credentials.matt_word,
       });
 
-    case 'ALIEXPRESS':
-      // AliExpress adapter not yet implemented - use Lomadee as placeholder
-      // TODO: Implement dedicated AliExpress Portals API adapter
-      return new LomadeeAdapter({
-        apiKey: credentials.apiKey ?? credentials.api_key ?? '',
-        sourceId: credentials.sourceId ?? credentials.source_id ?? '',
-      });
-
     default:
       throw new Error(
         `Unsupported marketplace: "${marketplace}". ` +
-        `Supported marketplaces: AMAZON, SHOPEE, MAGALU, MERCADOLIVRE, ALIEXPRESS`,
+        `Supported marketplaces: AMAZON, SHOPEE, MAGALU, MERCADOLIVRE`,
       );
   }
 }

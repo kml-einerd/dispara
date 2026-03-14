@@ -42,7 +42,7 @@ interface InteractResponse {
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
-const URL_REGEX = /https?:\/\/(www\.)?(shopee\.com\.br|mercadolivre\.com\.br|amazon\.com\.br|magazineluiza\.com\.br|aliexpress\.com)[^\s]*/i;
+const URL_REGEX = /https?:\/\/(www\.)?(shopee\.com\.br|mercadolivre\.com\.br|amazon\.com\.br|magazineluiza\.com\.br)[^\s]*/i;
 
 function isMarketplaceUrl(text: string): boolean {
   return URL_REGEX.test(text);

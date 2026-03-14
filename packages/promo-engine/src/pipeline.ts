@@ -101,7 +101,7 @@ export class PromoEngine {
       if (!detected) {
         throw new Error(
           `Could not detect marketplace from URL: ${input.url}. ` +
-          `Supported: AMAZON, SHOPEE, MERCADOLIVRE, MAGALU, ALIEXPRESS`,
+          `Supported: AMAZON, SHOPEE, MERCADOLIVRE, MAGALU`,
         );
       }
       marketplace = detected;

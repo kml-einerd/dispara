@@ -3,7 +3,7 @@
 // ============================================
 
 /** Supported marketplace identifiers */
-export type MarketplaceType = 'SHOPEE' | 'AMAZON' | 'MERCADOLIVRE' | 'MAGALU' | 'ALIEXPRESS';
+export type MarketplaceType = 'SHOPEE' | 'AMAZON' | 'MERCADOLIVRE' | 'MAGALU';
 
 /** Promo lifecycle status */
 export type PromoStatusType = 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
@@ -103,16 +103,6 @@ export const MARKETPLACE_CONFIGS: Record<MarketplaceType, {
     urlPatterns: [
       /magazineluiza\.com\.br/i,
       /magalu\.com/i,
-    ],
-  },
-  ALIEXPRESS: {
-    name: 'AliExpress',
-    baseUrl: 'https://pt.aliexpress.com',
-    affiliateBaseUrl: 'https://portals.aliexpress.com',
-    rateLimit: { maxRequests: 30, windowMs: 60_000 },
-    urlPatterns: [
-      /aliexpress\.com/i,
-      /s\.click\.aliexpress/i,
     ],
   },
 };

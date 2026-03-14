@@ -50,11 +50,6 @@ describe('createMarketplaceAdapter (MarketplaceFactory)', () => {
     expect(adapter).toBeInstanceOf(MercadoLivreAdapter);
   });
 
-  it('creates LomadeeAdapter for "ALIEXPRESS"', () => {
-    const adapter = createMarketplaceAdapter('ALIEXPRESS', lomadeeCreds);
-    expect(adapter).toBeInstanceOf(LomadeeAdapter);
-  });
-
   it('throws for unknown marketplace', () => {
     expect(() => createMarketplaceAdapter('UNKNOWN', {})).toThrow(
       'Unsupported marketplace: "UNKNOWN"',
@@ -63,7 +58,7 @@ describe('createMarketplaceAdapter (MarketplaceFactory)', () => {
 
   it('throws with list of supported marketplaces', () => {
     expect(() => createMarketplaceAdapter('WISH', {})).toThrow(
-      'Supported marketplaces: AMAZON, SHOPEE, MAGALU, MERCADOLIVRE, ALIEXPRESS',
+      'Supported marketplaces: AMAZON, SHOPEE, MAGALU, MERCADOLIVRE',
     );
   });
 

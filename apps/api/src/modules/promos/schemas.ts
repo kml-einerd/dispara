@@ -5,7 +5,7 @@ export const createPromoSchema = z
     url: z.string().url().optional(),
     keyword: z.string().min(2).max(200).optional(),
     marketplace: z
-      .enum(['SHOPEE', 'AMAZON', 'MERCADOLIVRE', 'MAGALU', 'ALIEXPRESS'])
+      .enum(['SHOPEE', 'AMAZON', 'MERCADOLIVRE', 'MAGALU'])
       .optional(),
   })
   .refine((data) => data.url || data.keyword, {
@@ -17,7 +17,7 @@ export const listPromosSchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(20),
   status: z.enum(['DRAFT', 'ACTIVE', 'ARCHIVED']).optional(),
   marketplace: z
-    .enum(['SHOPEE', 'AMAZON', 'MERCADOLIVRE', 'MAGALU', 'ALIEXPRESS'])
+    .enum(['SHOPEE', 'AMAZON', 'MERCADOLIVRE', 'MAGALU'])
     .optional(),
   search: z.string().max(200).optional(),
 });

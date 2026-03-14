@@ -1,47 +1,74 @@
-# Dispara v2
+# Dispara v2 — Padroes e Convencoes
 
 ## Stack
 - Monorepo: Turborepo + npm workspaces
-- Backend: Fastify 5 + Prisma 6 + PostgreSQL 17
-- Frontend: Next.js 15 + React 19 + Tailwind CSS 4
+- Backend: Fastify 5 + Prisma 6 + PostgreSQL 17 (Supabase)
+- Frontend: Vite 6 + React 19 + Tailwind CSS 4 + Radix UI
 - Queue: BullMQ 5 + Redis 7
-- WhatsApp: Baileys (whiskeysockets/baileys) — protocol nativo, sem browser
-- AI: OpenRouter (multi-model, formato OpenAI) — default: anthropic/claude-haiku-4-5-20251001
+- WhatsApp: Baileys (whiskeysockets/baileys) — protocolo nativo, sem browser
+- AI: OpenRouter (multi-model) — default: claude-haiku
 - Auth: Supabase Auth (Google OAuth) — x-tenant-id header fallback in dev mode
 
-## Conventions
-- ESM only (type: "module")
+## Convencoes Globais
+- ESM only (`"type": "module"` em todos os packages)
 - TypeScript strict mode
-- Zod for runtime validation on API boundaries
-- Pino for structured logging (never console.log)
-- Multi-tenant: every query MUST scope by tenant_id
-- Tests: Vitest — 80% coverage minimum on dispatch services
-- Naming: camelCase (TS), snake_case (DB columns via @@map)
-- Errors: never catch-all retry. Specific error classes for transient vs permanent failures
-- Circuit breaker: per-session, 3 failures in 5min = pause 1h
-- Anti-bloqueio: every WA message MUST have unique hash (spintax + zero-width chars)
-- Dispatch windows: 09-12h + 14-18h BRT only. Never send outside.
-- Warm-up: new numbers start at 10 msgs/day, ramp over 30 days
+- Zod para validacao runtime nas fronteiras da API
+- Pino para logging estruturado (nunca `console.log`)
+- Naming: `camelCase` (TS), `snake_case` (colunas DB via `@@map`)
+- Erros: classes especificas para transient vs permanent — nunca catch-all retry
 
-## Package Structure
-- apps/api: Fastify REST API + WebSocket gateway
-- Frontend: frot-dispara (Vite + React 19) — projeto separado em /home/agdev/frot-dispara/
-- packages/shared: types, constants (queues, warmup schedule, dispatch windows)
-- packages/wa-manager: Baileys wrapper (session lifecycle, QR, typing simulation)
-- packages/dispatch-engine: anti-bloqueio (spintax, gaussian delay, circuit breaker, warmup, number pool)
-- workers/dispatch-worker: BullMQ worker (1 job = 1 message to 1 group)
+## Multi-Tenancy
+- Toda query ao banco DEVE ter scope por `tenant_id`
+- Middleware `tenant.ts` valida token Supabase → busca `User.externalAuthId` → seta `tenantId`
+- POST `/v1/auth/callback` auto-provisiona tenant+user no primeiro login Google
+- Em dev mode, header `x-tenant-id` funciona como fallback
 
-## API Patterns
-- Routes use Fastify plugin pattern (export async function xxxRoutes(app))
-- Request validation: Zod schemas in schema.ts, parsed in route handler
-- Tenant isolation: tenantMiddleware validates Supabase token → looks up User.externalAuthId → sets tenantId
-- Auth: POST /v1/auth/callback auto-provisions tenant+user on first Google login
-- WebSocket: subscribe to channels via JSON messages {type: "subscribe", channel: "wa:qr:xxx"}
-- Queue: dispatch-queue (normal), dispatch-priority-queue (immediate), dispatch-dlq (dead letter)
-- LLM calls: fetch direto para OpenRouter API (https://openrouter.ai/api/v1/chat/completions)
+## Pipeline de Dispatch
+1. Usuario cria promo → `promo-engine` gera copy (5 tons) + imagem
+2. Dispatch criado com grupos-alvo → entra na fila `dispatch-queue` (ou `dispatch-priority-queue`)
+3. `dispatch-worker` consome job: 1 job = 1 mensagem para 1 grupo
+4. `dispatch-engine` aplica anti-bloqueio: spintax, gaussian delay, zero-width chars
+5. `wa-manager` envia via Baileys com typing simulation
+6. Circuit breaker: 3 falhas em 5min por sessao = pausa 1h
+7. Dead letter queue (`dispatch-dlq`) para falhas permanentes
 
-## Key Files
-- apps/api/prisma/schema.prisma: all DB models
-- packages/shared/src/index.ts: shared constants and types
-- packages/dispatch-engine/src/spintax.ts: message variation engine
-- packages/wa-manager/src/session-manager.ts: Baileys session lifecycle
+### Regras de Envio
+- Janela: 09-12h + 14-18h BRT apenas. Nunca fora.
+- Warm-up: numeros novos comecam com 10 msgs/dia, ramp over 30 dias
+- Toda mensagem DEVE ter hash unico (spintax + zero-width chars)
+
+## Como Adicionar um Novo Package
+1. Criar diretorio em `packages/<nome>/`
+2. `package.json` com name `@dispara/<nome>`, `"type": "module"`
+3. `tsconfig.json` extendendo `../../tsconfig.base.json`
+4. Registrar no `turbo.json` se tiver tasks customizadas
+5. Importar de outros packages via `@dispara/<nome>`
+
+## Como Adicionar um Marketplace Adapter
+1. Criar arquivo em `packages/marketplace/src/adapters/<nome>.ts`
+2. Implementar interface definida em `packages/marketplace/src/types.ts`
+3. Registrar no factory em `packages/marketplace/src/factory.ts`
+4. Adapters existentes: `shopee`, `mercadolivre`, `amazon`, `lomadee`
+
+## Estrutura de Rotas (API)
+- Organizadas por modulo em `apps/api/src/modules/<dominio>/`
+- Cada modulo e um Fastify plugin: `export async function xxxRoutes(app)`
+- Schemas Zod em arquivo separado dentro do modulo
+- Modulos: `auth`, `agent`, `commissions`, `dispatches`, `feeds`, `gate`, `groups`, `health`, `links`, `oauth`, `promos`, `telegram`, `wa-sessions`, `webhooks`
+
+## Middleware
+- `tenant.ts` — isolamento multi-tenant (obrigatorio em todas as rotas autenticadas)
+- `usage-gate.ts` — controle de limites de uso por plano
+- `error-handler.ts` — tratamento centralizado de erros
+
+## Testes
+- Framework: Vitest
+- 80% coverage minimo em dispatch services
+- Testes em `__tests__/` dentro de cada package/app
+- `npx turbo run test` para rodar tudo
+
+## Arquivos Chave
+- `apps/api/prisma/schema.prisma` — todos os modelos DB
+- `packages/shared/src/index.ts` — constantes e types compartilhados
+- `packages/dispatch-engine/src/spintax.ts` — motor de variacao de mensagens
+- `packages/wa-manager/src/session-manager.ts` — lifecycle de sessoes Baileys

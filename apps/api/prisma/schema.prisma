@@ -534,7 +534,6 @@ enum Marketplace {
   AMAZON
   MERCADOLIVRE
   MAGALU
-  ALIEXPRESS
 }
 
 enum AccountStatus {
