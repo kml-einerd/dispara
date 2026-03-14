@@ -1,9 +1,14 @@
 // ============================================
+// Crypto
+// ============================================
+export { encryptJSON, decryptJSON } from './crypto.js';
+
+// ============================================
 // Types
 // ============================================
 
 /** Supported marketplace identifiers */
-export type MarketplaceType = 'SHOPEE' | 'AMAZON' | 'MERCADOLIVRE' | 'MAGALU' | 'ALIEXPRESS';
+export type MarketplaceType = 'SHOPEE' | 'AMAZON' | 'MERCADOLIVRE' | 'MAGALU';
 
 /** Promo lifecycle status */
 export type PromoStatusType = 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
@@ -38,7 +43,7 @@ export interface PromoData {
 export interface CopyVariation {
   label: string;
   text: string;
-  tone: 'urgente' | 'casual' | 'formal';
+  tone: 'urgente' | 'casual' | 'formal' | 'divertido' | 'escassez';
   charCount: number;
 }
 
@@ -103,16 +108,6 @@ export const MARKETPLACE_CONFIGS: Record<MarketplaceType, {
     urlPatterns: [
       /magazineluiza\.com\.br/i,
       /magalu\.com/i,
-    ],
-  },
-  ALIEXPRESS: {
-    name: 'AliExpress',
-    baseUrl: 'https://pt.aliexpress.com',
-    affiliateBaseUrl: 'https://portals.aliexpress.com',
-    rateLimit: { maxRequests: 30, windowMs: 60_000 },
-    urlPatterns: [
-      /aliexpress\.com/i,
-      /s\.click\.aliexpress/i,
     ],
   },
 };
@@ -240,6 +235,39 @@ export function generateSlug(name: string): string {
     .replace(/-+/g, '-')             // collapse multiple hyphens
     .replace(/^-|-$/g, '');          // trim leading/trailing hyphens
 }
+
+/**
+ * Fetch with timeout — wraps native fetch with an AbortController.
+ * @param url - Request URL
+ * @param options - Standard RequestInit options
+ * @param timeoutMs - Timeout in milliseconds (default: 10000)
+ * @returns Response object
+ * @throws Error with message 'Request timeout' if exceeded
+ */
+export async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 10_000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeoutMs}ms: ${url}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ============================================
+// Monitoring
+// ============================================
+
+export { initMonitoring, sendAlert } from './monitoring.js';
 
 /** Check if current time is within dispatch window (BRT) */
 export function isWithinDispatchWindow(now: Date = new Date()): boolean {

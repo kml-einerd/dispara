@@ -1,286 +1,89 @@
-import type {
-  ApiResponse,
-  PaginatedResponse,
-  Promo,
-  PromoWithVariations,
-  CreatePromoPayload,
-  UpdatePromoPayload,
-  CopyVariation,
-  WaSessionListResponse,
-  QrResponse,
-  CreateSessionResponse,
-  WaSessionHealthResponse,
-  GroupListResponse,
-  ImportGroupsResponse,
-  WaGroup,
-  DispatchListResponse,
-  DispatchDetail,
-  CreateDispatchPayload,
-  CreateDispatchResponse,
-  AgentConfig,
-  AgentStats,
-  AgentInteractionListResponse,
-  AgentGroupChannel,
-  AgentIntent,
-} from '@/types';
+import { useAuthStore } from '../store/auth';
+import { supabase } from './supabase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/v1';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/v1';
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
-class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'ApiError';
-  }
-}
+async function fetcher(url: string, options: RequestInit = {}) {
+  const { token, tenantId } = useAuthStore.getState();
 
-class ApiClient {
-  private token: string | null = null;
-  private tenantId: string | null = null;
+  if (USE_MOCK) {
+    const mock = await import('./api-mock');
+    await new Promise(resolve => setTimeout(resolve, 300));
 
-  setAuth(token: string | null, tenantId: string | null) {
-    this.token = token;
-    this.tenantId = tenantId;
-  }
-
-  private headers(): HeadersInit {
-    const h: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-
-    if (this.token) {
-      h['Authorization'] = `Bearer ${this.token}`;
+    if (url.includes('/wa/sessions')) {
+      if (url.endsWith('/qr')) return { qr: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', status: 'PENDING' };
+      if (url.endsWith('/health')) return { healthScore: 85, warmupDay: 10, dailyMsgCount: 50 };
+      return { sessions: mock.mockSessions };
     }
+    if (url.includes('/groups')) return { data: mock.mockGroups, pagination: { total: 3 } };
+    if (url.includes('/promos')) return { data: mock.mockPromos, pagination: { total: 1 } };
+    if (url.includes('/dispatches')) return { data: mock.mockDispatchesExtended, pagination: { total: mock.mockDispatchesExtended.length } };
+    if (url.includes('/oauth/accounts')) return { accounts: mock.mockAffiliateAccounts };
+    if (url.includes('/oauth/mercadolivre/connect')) return { url: 'https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=MOCK' };
+    if (url.includes('/oauth/shopee/connect')) return { account: mock.mockAffiliateAccounts[0] };
+    if (url.includes('/affiliate-accounts')) return { accounts: mock.mockAffiliateAccounts };
+    if (url.includes('/gate/status')) return mock.mockGateStatus;
 
-    if (this.tenantId) {
-      h['X-Tenant-ID'] = this.tenantId;
-    } else if (!this.token) {
-      // Dev fallback when no auth is configured
-      h['X-Tenant-ID'] = 'dev-tenant-id';
-    }
-
-    return h;
+    return {};
   }
 
-  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
-    const url = `${API_BASE}${path}`;
-    const res = await fetch(url, {
-      ...options,
-      headers: {
-        ...this.headers(),
-        ...options.headers,
-      },
-    });
+  const headers: Record<string, string> = {
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    ...(tenantId ? { 'X-Tenant-ID': tenantId } : {}),
+  };
 
-    if (!res.ok) {
-      const body = await res.text();
-      let message: string;
-      try {
-        const json = JSON.parse(body);
-        message = json.message || json.error || body;
-      } catch {
-        message = body || `HTTP ${res.status}`;
+  // Don't set Content-Type for FormData — browser sets it with boundary
+  const incomingHeaders = options.headers as Record<string, string> | undefined;
+  if (incomingHeaders?.['Content-Type']) {
+    headers['Content-Type'] = incomingHeaders['Content-Type'];
+  } else if (!options.body || !(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const response = await fetch(`${API_URL}${url}`, {
+    ...options,
+    headers,
+  });
+
+  if (response.status === 401) {
+    const { data, error } = await supabase.auth.refreshSession();
+    if (data.session) {
+      useAuthStore.setState({
+        token: data.session.access_token,
+        session: data.session,
+        user: data.session.user,
+      });
+      const retryResponse = await fetch(`${API_URL}${url}`, {
+        ...options,
+        headers: {
+          ...headers,
+          'Authorization': `Bearer ${data.session.access_token}`,
+        },
+      });
+      if (!retryResponse.ok) {
+        const err = await retryResponse.json().catch(() => ({ message: 'Erro desconhecido' }));
+        throw new Error(err.message || 'Erro na requisição');
       }
-      throw new ApiError(res.status, message);
+      return retryResponse.json();
     }
-
-    if (res.status === 204) return undefined as T;
-    return res.json();
+    useAuthStore.getState().clearAuth();
+    throw new Error('Sessão expirada. Faça login novamente.');
   }
 
-  // ========== Promos ==========
-
-  async createPromo(data: CreatePromoPayload): Promise<ApiResponse<PromoWithVariations>> {
-    return this.request('/promos', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: 'Erro desconhecido' }));
+    throw new Error(error.message || 'Erro na requisição');
   }
 
-  async listPromos(params: {
-    page?: number;
-    limit?: number;
-    status?: string;
-    marketplace?: string;
-    search?: string;
-  } = {}): Promise<PaginatedResponse<Promo>> {
-    const searchParams = new URLSearchParams();
-    if (params.page) searchParams.set('page', String(params.page));
-    if (params.limit) searchParams.set('limit', String(params.limit));
-    if (params.status) searchParams.set('status', params.status);
-    if (params.marketplace) searchParams.set('marketplace', params.marketplace);
-    if (params.search) searchParams.set('search', params.search);
-
-    const qs = searchParams.toString();
-    return this.request(`/promos${qs ? `?${qs}` : ''}`);
-  }
-
-  async getPromo(id: string): Promise<ApiResponse<PromoWithVariations>> {
-    return this.request(`/promos/${id}`);
-  }
-
-  async updatePromo(id: string, data: UpdatePromoPayload): Promise<ApiResponse<Promo>> {
-    return this.request(`/promos/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async deletePromo(id: string): Promise<void> {
-    return this.request(`/promos/${id}`, { method: 'DELETE' });
-  }
-
-  async generateVariations(
-    id: string,
-    count: number = 3,
-  ): Promise<ApiResponse<CopyVariation[]>> {
-    return this.request(`/promos/${id}/variations`, {
-      method: 'POST',
-      body: JSON.stringify({ count }),
-    });
-  }
-
-  // ========== WhatsApp Sessions ==========
-
-  async listSessions(): Promise<WaSessionListResponse> {
-    return this.request('/wa/sessions');
-  }
-
-  async createSession(name: string): Promise<CreateSessionResponse> {
-    return this.request('/wa/sessions', {
-      method: 'POST',
-      body: JSON.stringify({ name }),
-    });
-  }
-
-  async deleteSession(id: string): Promise<{ success: boolean }> {
-    return this.request(`/wa/sessions/${id}`, { method: 'DELETE' });
-  }
-
-  async getSessionQr(id: string): Promise<QrResponse> {
-    return this.request(`/wa/sessions/${id}/qr`);
-  }
-
-  async getSessionHealth(id: string): Promise<WaSessionHealthResponse> {
-    return this.request(`/wa/sessions/${id}/health`);
-  }
-
-  // ========== Groups ==========
-
-  async listGroups(params: {
-    sessionId?: string;
-    isActive?: string;
-    cursor?: string;
-    limit?: number;
-  } = {}): Promise<GroupListResponse> {
-    const searchParams = new URLSearchParams();
-    if (params.sessionId) searchParams.set('sessionId', params.sessionId);
-    if (params.isActive) searchParams.set('isActive', params.isActive);
-    if (params.cursor) searchParams.set('cursor', params.cursor);
-    if (params.limit) searchParams.set('limit', String(params.limit));
-
-    const qs = searchParams.toString();
-    return this.request(`/groups${qs ? `?${qs}` : ''}`);
-  }
-
-  async importGroups(sessionId: string): Promise<ImportGroupsResponse> {
-    return this.request('/groups/import', {
-      method: 'POST',
-      body: JSON.stringify({ sessionId }),
-    });
-  }
-
-  async updateGroup(id: string, data: { isActive?: boolean }): Promise<WaGroup> {
-    return this.request(`/groups/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    });
-  }
-
-  // ========== Dispatches ==========
-
-  async listDispatches(params: {
-    status?: string;
-    cursor?: string;
-    limit?: number;
-  } = {}): Promise<DispatchListResponse> {
-    const searchParams = new URLSearchParams();
-    if (params.status) searchParams.set('status', params.status);
-    if (params.cursor) searchParams.set('cursor', params.cursor);
-    if (params.limit) searchParams.set('limit', String(params.limit));
-
-    const qs = searchParams.toString();
-    return this.request(`/dispatches${qs ? `?${qs}` : ''}`);
-  }
-
-  async getDispatch(id: string): Promise<DispatchDetail> {
-    return this.request(`/dispatches/${id}`);
-  }
-
-  async createDispatch(data: CreateDispatchPayload): Promise<CreateDispatchResponse> {
-    return this.request('/dispatches', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async cancelDispatch(id: string): Promise<{ status: string; id: string }> {
-    return this.request(`/dispatches/${id}`, { method: 'DELETE' });
-  }
-
-  async retryDispatch(id: string): Promise<{ status: string; retryCount: number }> {
-    return this.request(`/dispatches/${id}/retry`, { method: 'POST' });
-  }
-  // ========== AI Agent ==========
-
-  async getAgentConfig(): Promise<AgentConfig> {
-    return this.request('/agent/config');
-  }
-
-  async updateAgentConfig(data: Partial<AgentConfig>): Promise<AgentConfig> {
-    return this.request('/agent/config', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async getAgentStats(period: 'day' | 'week' | 'month' = 'week'): Promise<AgentStats> {
-    return this.request(`/agent/stats?period=${period}`);
-  }
-
-  async listAgentInteractions(params: {
-    cursor?: string;
-    limit?: number;
-    intent?: AgentIntent;
-    groupId?: string;
-    startDate?: string;
-    endDate?: string;
-  } = {}): Promise<AgentInteractionListResponse> {
-    const searchParams = new URLSearchParams();
-    if (params.cursor) searchParams.set('cursor', params.cursor);
-    if (params.limit) searchParams.set('limit', String(params.limit));
-    if (params.intent) searchParams.set('intent', params.intent);
-    if (params.groupId) searchParams.set('groupId', params.groupId);
-    if (params.startDate) searchParams.set('startDate', params.startDate);
-    if (params.endDate) searchParams.set('endDate', params.endDate);
-
-    const qs = searchParams.toString();
-    return this.request(`/agent/interactions${qs ? `?${qs}` : ''}`);
-  }
-
-  async listAgentChannels(): Promise<AgentGroupChannel[]> {
-    return this.request('/agent/channels');
-  }
-
-  async updateAgentChannel(id: string, data: { agentEnabled: boolean }): Promise<AgentGroupChannel> {
-    return this.request(`/agent/channels/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    });
-  }
+  return response.json();
 }
 
-export const api = new ApiClient();
-export { ApiError };
+export const api = {
+  get: (url: string) => fetcher(url),
+  post: (url: string, data?: any) => fetcher(url, {
+    method: 'POST',
+    body: data instanceof FormData ? data : JSON.stringify(data),
+  }),
+  delete: (url: string) => fetcher(url, { method: 'DELETE' }),
+};

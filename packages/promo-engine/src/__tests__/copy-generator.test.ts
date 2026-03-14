@@ -26,12 +26,12 @@ describe('CopyGenerator', () => {
     fetchSpy = vi.spyOn(globalThis, 'fetch') as unknown as ReturnType<typeof vi.fn>;
   });
 
-  function mockSuccess(variations: Array<{ label: string; tone: string; text: string }>) {
+  function mockToneResponse(text: string) {
     fetchSpy.mockResolvedValueOnce({
       ok: true,
       status: 200,
       json: async () => ({
-        choices: [{ message: { content: JSON.stringify(variations) } }],
+        choices: [{ message: { content: text } }],
       }),
     });
   }
@@ -46,11 +46,9 @@ describe('CopyGenerator', () => {
 
   describe('generateVariations()', () => {
     it('returns specified count of variations', async () => {
-      mockSuccess([
-        { label: 'urgente', tone: 'urgente', text: 'CORRE! Echo Dot por R$ 229,00!' },
-        { label: 'casual', tone: 'casual', text: 'Olha esse precinho do Echo Dot!' },
-        { label: 'formal', tone: 'formal', text: 'Oferta especial: Echo Dot com 43% OFF' },
-      ]);
+      mockToneResponse('🔥 CORRE! Echo Dot por R$ 229,00!');
+      mockToneResponse('Gente, olha esse precinho!');
+      mockToneResponse('📢 Oferta Especial: Echo Dot com 43% OFF');
 
       const variations = await generator.generateVariations(sampleProduct, 3);
 
@@ -58,11 +56,9 @@ describe('CopyGenerator', () => {
     });
 
     it('each variation has required fields (label, text, tone, charCount)', async () => {
-      mockSuccess([
-        { label: 'urgente', tone: 'urgente', text: 'Promo urgente aqui!' },
-        { label: 'casual', tone: 'casual', text: 'Olha que legal esse produto!' },
-        { label: 'formal', tone: 'formal', text: 'Oferta especial disponivel.' },
-      ]);
+      mockToneResponse('Promo urgente aqui!');
+      mockToneResponse('Olha que legal esse produto!');
+      mockToneResponse('Oferta especial disponivel.');
 
       const variations = await generator.generateVariations(sampleProduct, 3);
 
@@ -79,11 +75,9 @@ describe('CopyGenerator', () => {
 
     it('each variation has copyText < 500 chars', async () => {
       const shortText = 'Oferta incrivel! Echo Dot por apenas R$ 229,00 com 43% de desconto!';
-      mockSuccess([
-        { label: 'urgente', tone: 'urgente', text: shortText },
-        { label: 'casual', tone: 'casual', text: shortText },
-        { label: 'formal', tone: 'formal', text: shortText },
-      ]);
+      mockToneResponse(shortText);
+      mockToneResponse(shortText);
+      mockToneResponse(shortText);
 
       const variations = await generator.generateVariations(sampleProduct, 3);
 
@@ -93,9 +87,7 @@ describe('CopyGenerator', () => {
     });
 
     it('calls OpenRouter API with correct model and parameters', async () => {
-      mockSuccess([
-        { label: 'urgente', tone: 'urgente', text: 'test' },
-      ]);
+      mockToneResponse('test copy');
 
       await generator.generateVariations(sampleProduct, 1);
 
@@ -111,38 +103,39 @@ describe('CopyGenerator', () => {
 
       const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
       expect(body.model).toBe('anthropic/claude-haiku-4-5-20251001');
-      expect(body.max_tokens).toBe(1024);
+      expect(body.max_tokens).toBe(512);
     });
 
-    it('retries once on first failure, then succeeds', async () => {
-      // First call fails (API error)
+    it('uses fallback copies when API fails for a tone', async () => {
       mockApiError();
-      // Second call succeeds
-      mockSuccess([
-        { label: 'urgente', tone: 'urgente', text: 'Retry success!' },
-      ]);
+      mockToneResponse('Casual copy here!');
+      mockToneResponse('Formal copy here!');
 
-      const variations = await generator.generateVariations(sampleProduct, 1);
+      const variations = await generator.generateVariations(sampleProduct, 3);
 
-      expect(variations).toHaveLength(1);
-      expect(variations[0]!.text).toBe('Retry success!');
-      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(variations).toHaveLength(3);
+      const fallback = variations.find(v => v.tone === 'urgente');
+      expect(fallback).toBeDefined();
+      expect(fallback!.text).toContain(sampleProduct.name);
+      expect(fallback!.text).toContain('R$');
     });
 
-    it('falls back to template copies when API fails twice', async () => {
+    it('falls back to template copies when all API calls fail', async () => {
+      mockApiError();
       mockApiError();
       mockApiError();
 
       const variations = await generator.generateVariations(sampleProduct, 3);
 
       expect(variations).toHaveLength(3);
-      expect(variations[0]!.text).toContain('R$');
-      expect(variations[0]!.tone).toBe('urgente');
-      expect(variations[1]!.tone).toBe('casual');
-      expect(variations[2]!.tone).toBe('formal');
+      for (const v of variations) {
+        expect(v.text).toContain(sampleProduct.name);
+        expect(v.text).toContain('229,00');
+      }
     });
 
     it('fallback copies contain product name and price', async () => {
+      mockApiError();
       mockApiError();
       mockApiError();
 
@@ -164,6 +157,7 @@ describe('CopyGenerator', () => {
         }),
       });
       mockApiError();
+      mockApiError();
 
       const variations = await generator.generateVariations(sampleProduct, 3);
 
@@ -171,18 +165,85 @@ describe('CopyGenerator', () => {
       expect(variations[0]!.text).toContain('R$');
     });
 
-    it('defaults to 3 variations when count not specified', async () => {
-      mockSuccess([
-        { label: 'urgente', tone: 'urgente', text: 'u' },
-        { label: 'casual', tone: 'casual', text: 'c' },
-        { label: 'formal', tone: 'formal', text: 'f' },
-      ]);
+    it('defaults to 5 variations when count not specified', async () => {
+      mockToneResponse('u');
+      mockToneResponse('c');
+      mockToneResponse('f');
+      mockToneResponse('d');
+      mockToneResponse('e');
 
-      await generator.generateVariations(sampleProduct);
+      const variations = await generator.generateVariations(sampleProduct);
+
+      expect(variations).toHaveLength(5);
+      expect(fetchSpy).toHaveBeenCalledTimes(5);
+    });
+
+    it('calls onVariation callback for each variation', async () => {
+      mockToneResponse('urgente copy');
+      mockToneResponse('casual copy');
+
+      const callback = vi.fn();
+      await generator.generateVariations(sampleProduct, 2, { onVariation: callback });
+
+      expect(callback).toHaveBeenCalledTimes(2);
+    });
+
+    it('assigns correct tone labels to each variation', async () => {
+      mockToneResponse('urgente copy');
+      mockToneResponse('casual copy');
+      mockToneResponse('formal copy');
+
+      const variations = await generator.generateVariations(sampleProduct, 3);
+
+      expect(variations.map(v => v.tone)).toEqual(
+        expect.arrayContaining(['urgente', 'casual', 'formal']),
+      );
+    });
+  });
+
+  describe('generateForTone()', () => {
+    it('generates a single variation for a specific tone', async () => {
+      mockToneResponse('🔥 CORRE! Promo incrivel!');
+
+      const variation = await generator.generateForTone(sampleProduct, 'urgente');
+
+      expect(variation.tone).toBe('urgente');
+      expect(variation.label).toBe('urgente');
+      expect(variation.text).toBe('🔥 CORRE! Promo incrivel!');
+      expect(variation.charCount).toBe('🔥 CORRE! Promo incrivel!'.length);
+    });
+
+    it('throws when API returns error', async () => {
+      mockApiError();
+
+      await expect(generator.generateForTone(sampleProduct, 'casual'))
+        .rejects.toThrow('OpenRouter API error: 500');
+    });
+
+    it('throws when API returns no content', async () => {
+      fetchSpy.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: null } }],
+        }),
+      });
+
+      await expect(generator.generateForTone(sampleProduct, 'formal'))
+        .rejects.toThrow('No content in OpenRouter response for tone: formal');
+    });
+
+    it('includes few-shot example in messages', async () => {
+      mockToneResponse('test');
+
+      await generator.generateForTone(sampleProduct, 'urgente');
 
       const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
-      const userMsg = body.messages.find((m: any) => m.role === 'user');
-      expect(userMsg.content).toContain('3 variacoes');
+      expect(body.messages).toHaveLength(4);
+      expect(body.messages[0].role).toBe('system');
+      expect(body.messages[1].role).toBe('user');
+      expect(body.messages[2].role).toBe('assistant');
+      expect(body.messages[3].role).toBe('user');
     });
   });
 });

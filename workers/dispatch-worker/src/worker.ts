@@ -1,8 +1,8 @@
-import { Worker, Job } from 'bullmq';
+import { Worker, Queue, Job } from 'bullmq';
 import { PrismaClient } from '@prisma/client';
 import { Redis as IORedis } from 'ioredis';
 import pino from 'pino';
-import { QUEUES, type DispatchJobData, isWithinDispatchWindow } from '@dispara/shared';
+import { QUEUES, type DispatchJobData, isWithinDispatchWindow, initMonitoring, sendAlert } from '@dispara/shared';
 import { spinText, applyAntiDetection, humanDelay, typingDuration, CircuitBreaker, canSendMessage } from '@dispara/dispatch-engine';
 import { getWaSessionManager } from '@dispara/wa-manager';
 
@@ -13,6 +13,12 @@ const redisClient = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379
 });
 const redis = redisClient as unknown as import('bullmq').ConnectionOptions;
 const waManager = getWaSessionManager();
+
+// Initialize monitoring with Telegram credentials
+initMonitoring({
+  telegramToken: process.env.TELEGRAM_BOT_TOKEN,
+  telegramChatId: process.env.TELEGRAM_CHAT_ID,
+});
 
 /** Per-session circuit breakers */
 const circuitBreakers = new Map<string, CircuitBreaker>();
@@ -108,25 +114,21 @@ async function processDispatchJob(job: Job<DispatchJobData>): Promise<void> {
       },
     });
 
-    // Update dispatch counters atomically
-    await prisma.dispatch.update({
-      where: { id: dispatchId },
-      data: { sentCount: { increment: 1 } },
-    });
-
-    // Update session daily msg count
-    await prisma.waSession.update({
-      where: { id: sessionId },
-      data: { dailyMsgCount: { increment: 1 } },
-    });
-
-    // Update group stats
-    await prisma.group.update({
-      where: { id: groupId },
-      data: {
-        updatedAt: new Date(),
-      },
-    });
+    // Update dispatch + session + group counters atomically
+    await prisma.$transaction([
+      prisma.dispatch.update({
+        where: { id: dispatchId },
+        data: { sentCount: { increment: 1 } },
+      }),
+      prisma.waSession.update({
+        where: { id: sessionId },
+        data: { dailyMsgCount: { increment: 1 } },
+      }),
+      prisma.group.update({
+        where: { id: groupId },
+        data: { updatedAt: new Date() },
+      }),
+    ]);
 
     // Check if dispatch is complete
     await checkDispatchComplete(dispatchId);
@@ -155,6 +157,7 @@ async function processDispatchJob(job: Job<DispatchJobData>): Promise<void> {
     const circuitOpened = cb.recordFailure();
     if (circuitOpened) {
       logger.warn({ sessionId }, 'Circuit breaker OPENED — session paused for 1 hour');
+      sendAlert('critical', 'Circuit Breaker OPEN', `Session \`${sessionId}\` paused for 1 hour after repeated failures.\nDispatch: \`${dispatchId}\``).catch(() => {});
       // Update session health in DB
       await prisma.waSession.update({
         where: { id: sessionId },
@@ -162,20 +165,21 @@ async function processDispatchJob(job: Job<DispatchJobData>): Promise<void> {
       }).catch(() => {});
     }
 
-    await prisma.dispatchItem.update({
-      where: { id: dispatchItemId },
-      data: {
-        status: 'FAILED',
-        lastError: errorMsg,
-        latencyMs,
-      },
-    });
-
-    // Update dispatch failure counter
-    await prisma.dispatch.update({
-      where: { id: dispatchId },
-      data: { failedCount: { increment: 1 } },
-    });
+    // Update item status + dispatch failure counter atomically
+    await prisma.$transaction([
+      prisma.dispatchItem.update({
+        where: { id: dispatchItemId },
+        data: {
+          status: 'FAILED',
+          lastError: errorMsg,
+          latencyMs,
+        },
+      }),
+      prisma.dispatch.update({
+        where: { id: dispatchId },
+        data: { failedCount: { increment: 1 } },
+      }),
+    ]);
 
     await checkDispatchComplete(dispatchId);
 
@@ -228,6 +232,12 @@ async function checkDispatchComplete(dispatchId: string): Promise<void> {
 
   if (pending > 0) return; // Still processing
 
+  // Alert if failure rate exceeds 20%
+  const total = sent + failed;
+  if (total > 0 && failed / total > 0.2) {
+    sendAlert('warning', 'High Dispatch Failure Rate', `Dispatch \`${dispatchId}\`: ${failed}/${total} failed (${Math.round(failed / total * 100)}%)`).catch(() => {});
+  }
+
   let status: string;
   if (failed === 0) {
     status = 'COMPLETED';
@@ -248,6 +258,39 @@ async function checkDispatchComplete(dispatchId: string): Promise<void> {
   });
 
   logger.info({ dispatchId, status, sent, failed }, 'Dispatch status updated');
+}
+
+// ── Dead Letter Queue ──
+
+const dlqQueue = new Queue(QUEUES.DISPATCH_DLQ, { connection: redis });
+
+/**
+ * Move permanently failed jobs to DLQ for later inspection/replay.
+ * Called when a job exhausts all retry attempts.
+ */
+async function moveToDeadLetter(job: Job<DispatchJobData>, error: string): Promise<void> {
+  try {
+    await dlqQueue.add('dead-letter', {
+      ...job.data,
+      originalJobId: job.id,
+      originalQueue: job.queueName,
+      failedAt: new Date().toISOString(),
+      attempts: job.attemptsMade,
+      lastError: error,
+    } as any, {
+      removeOnComplete: false,  // Keep DLQ items for inspection
+      removeOnFail: false,
+    });
+    logger.warn({
+      jobId: job.id,
+      dispatchId: job.data.dispatchId,
+      groupId: job.data.groupId,
+      error,
+    }, 'Job moved to DLQ after exhausting retries');
+    sendAlert('warning', 'Job moved to DLQ', `Dispatch \`${job.data.dispatchId}\`\nGroup: \`${job.data.groupId}\`\nError: ${error}\nAttempts: ${job.attemptsMade}`).catch(() => {});
+  } catch (dlqErr) {
+    logger.error({ jobId: job.id, dlqErr }, 'Failed to move job to DLQ');
+  }
 }
 
 // ── Create workers ──
@@ -281,8 +324,12 @@ for (const worker of [dispatchWorker, priorityWorker]) {
     logger.debug({ jobId: job.id, queue: worker.name }, 'Job completed');
   });
 
-  worker.on('failed', (job, err) => {
-    logger.error({ jobId: job?.id, queue: worker.name, error: err.message }, 'Job failed');
+  worker.on('failed', async (job, err) => {
+    logger.error({ jobId: job?.id, queue: worker.name, error: err.message, attempt: job?.attemptsMade }, 'Job failed');
+    // Move to DLQ if retries exhausted (max 5 attempts)
+    if (job && job.attemptsMade >= 5) {
+      await moveToDeadLetter(job, err.message);
+    }
   });
 
   worker.on('error', (err) => {
@@ -300,6 +347,7 @@ for (const signal of signals) {
     logger.info(`Received ${signal}, shutting down workers...`);
     await dispatchWorker.close();
     await priorityWorker.close();
+    await dlqQueue.close();
     await prisma.$disconnect();
     redisClient.disconnect();
     process.exit(0);

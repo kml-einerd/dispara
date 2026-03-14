@@ -140,6 +140,5 @@ function detectMarketplace(url: string): string {
   if (lower.includes('amazon')) return 'AMAZON';
   if (lower.includes('mercadolivre') || lower.includes('mercadolibre')) return 'MERCADOLIVRE';
   if (lower.includes('magalu') || lower.includes('magazineluiza')) return 'MAGALU';
-  if (lower.includes('aliexpress')) return 'ALIEXPRESS';
   return 'SHOPEE';
 }

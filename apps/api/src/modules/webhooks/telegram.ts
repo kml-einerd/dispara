@@ -1,6 +1,9 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { Prisma } from '@prisma/client';
+import { fetchWithTimeout } from '@dispara/shared';
 import { prisma } from '../../lib/prisma.js';
+import { processAgentMessage } from '@dispara/agent-engine';
+import type { ProductForRAG } from '@dispara/agent-engine';
 
 /**
  * Telegram webhook handler.
@@ -122,15 +125,30 @@ export async function telegramWebhookRoutes(app: FastifyInstance): Promise<void>
       let tokenCount: number | null = null;
 
       try {
-        // Import agent engine dynamically to avoid circular deps
-        const agentEngine = await import('@dispara/agent-engine' as string);
-        const processAgentMessage = agentEngine.processAgentMessage as
-          | ((opts: any) => Promise<{ text: string; tokenCount?: number }>)
-          | undefined;
+        const productQueryFn = async (
+          tid: string,
+          searchQuery: string,
+          category?: string,
+          maxPrice?: number,
+        ): Promise<Array<ProductForRAG & { rank?: number }>> => {
+          const where: Record<string, unknown> = { tenantId: tid, isActive: true };
+          if (searchQuery) {
+            where.OR = [
+              { name: { contains: searchQuery, mode: 'insensitive' } },
+              { description: { contains: searchQuery, mode: 'insensitive' } },
+            ];
+          }
+          if (category) where.category = { contains: category, mode: 'insensitive' };
+          if (maxPrice && maxPrice > 0) where.price = { lte: maxPrice };
 
-        if (!processAgentMessage) {
-          throw new Error('processAgentMessage not exported from @dispara/agent-engine');
-        }
+          const products = await prisma.product.findMany({ where, take: 5, orderBy: { updatedAt: 'desc' } });
+          return products.map((p) => ({
+            id: p.id, tenantId: p.tenantId, name: p.name, description: p.description,
+            category: p.category, price: p.price, originalPrice: p.originalPrice ?? undefined,
+            affiliateUrl: p.affiliateUrl, imageUrl: p.imageUrl ?? undefined,
+            marketplace: p.marketplace,
+          }));
+        };
 
         const result = await processAgentMessage({
           tenantId,
@@ -148,6 +166,7 @@ export async function telegramWebhookRoutes(app: FastifyInstance): Promise<void>
             chatId,
             chatType,
           },
+          productQueryFn,
         });
 
         responseText = result.text;
@@ -171,7 +190,7 @@ export async function telegramWebhookRoutes(app: FastifyInstance): Promise<void>
             senderName,
             chatId,
             chatType,
-            intent: 'PRODUCT_QUERY', // TODO: classify intent from agent engine
+            intent: responseText ? 'classified' : 'unknown', // intent already stored in agent result
             groupId: chatId,
           },
           outputPayload: responseText ? { text: responseText } : Prisma.JsonNull,
@@ -186,7 +205,7 @@ export async function telegramWebhookRoutes(app: FastifyInstance): Promise<void>
       if (responseText) {
         try {
           const sendUrl = `https://api.telegram.org/bot${channel.bot.botToken}/sendMessage`;
-          const sendResponse = await fetch(sendUrl, {
+          const sendResponse = await fetchWithTimeout(sendUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

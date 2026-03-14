@@ -10,6 +10,9 @@ out/
 .env
 .env.local
 .env.*.local
+apps/*/.env
+apps/*/.env.local
+workers/*/.env
 
 # Logs
 *.log
@@ -34,5 +37,4 @@ wa-sessions/
 # OS
 .DS_Store
 Thumbs.db
-.github/workflows/
 .vercel

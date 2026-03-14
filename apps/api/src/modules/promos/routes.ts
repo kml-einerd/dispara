@@ -1,10 +1,12 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { PromoService, NotFoundError } from './service.js';
+import { PromoService, NotFoundError, ServiceUnavailableError } from './service.js';
 import {
   createPromoSchema,
   listPromosSchema,
   updatePromoSchema,
   generateVariationsSchema,
+  generateCopySchema,
+  generateImageSchema,
 } from './schemas.js';
 
 export async function promoRoutes(app: FastifyInstance): Promise<void> {
@@ -103,6 +105,104 @@ export async function promoRoutes(app: FastifyInstance): Promise<void> {
         if (err instanceof NotFoundError) {
           reply.status(404).send({
             error: { code: 'NOT_FOUND', message: err.message },
+          });
+          return;
+        }
+        throw err;
+      }
+    },
+  );
+
+  // ── POST /v1/promos/:id/generate-copy — Generate copy with SSE streaming ──
+  app.post(
+    '/:id/generate-copy',
+    async (
+      request: FastifyRequest<{ Params: { id: string } }>,
+      reply: FastifyReply,
+    ) => {
+      const { count } = generateCopySchema.parse(request.body ?? {});
+
+      reply.raw.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      });
+
+      try {
+        const stream = PromoService.generateCopyStream(
+          request.tenantId,
+          request.params.id,
+          count,
+        );
+
+        let index = 0;
+        for await (const variation of stream) {
+          reply.raw.write(
+            `data: ${JSON.stringify({ index, ...variation })}\n\n`,
+          );
+          index++;
+        }
+
+        reply.raw.write(`event: done\ndata: ${JSON.stringify({ total: index })}\n\n`);
+      } catch (err) {
+        if (err instanceof NotFoundError) {
+          reply.raw.write(
+            `event: error\ndata: ${JSON.stringify({ code: 'NOT_FOUND', message: err.message })}\n\n`,
+          );
+        } else {
+          reply.raw.write(
+            `event: error\ndata: ${JSON.stringify({ code: 'INTERNAL', message: 'Failed to generate copy' })}\n\n`,
+          );
+        }
+      } finally {
+        reply.raw.end();
+      }
+    },
+  );
+
+  // ── POST /v1/promos/:id/generate-image — Generate promo image with AI ──
+  app.post(
+    '/:id/generate-image',
+    {
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: '1 minute',
+          keyGenerator: (request: FastifyRequest) => request.tenantId,
+        },
+      },
+    },
+    async (
+      request: FastifyRequest<{ Params: { id: string } }>,
+      reply: FastifyReply,
+    ) => {
+      const input = generateImageSchema.parse(request.body ?? {});
+
+      try {
+        const result = await PromoService.generateImage(
+          request.tenantId,
+          request.params.id,
+          input,
+        );
+
+        reply.status(201).send(result);
+      } catch (err) {
+        if (err instanceof NotFoundError) {
+          reply.status(404).send({
+            error: { code: 'NOT_FOUND', message: err.message },
+          });
+          return;
+        }
+        if (err instanceof ServiceUnavailableError) {
+          reply.status(503).send({
+            error: { code: 'SERVICE_UNAVAILABLE', message: err.message },
+          });
+          return;
+        }
+        if ((err as Error).name === 'AbortError' || (err as any).code === 'TIMEOUT') {
+          reply.status(504).send({
+            error: { code: 'TIMEOUT', message: 'Image generation timed out' },
           });
           return;
         }

@@ -3,15 +3,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // Skip in CI - requires database connection
 const describeIntegration = process.env.DATABASE_URL ? describe : describe.skip;
 
-// Mock Anthropic SDK at the top level
-const mockCreate = vi.fn();
-
-vi.mock('@anthropic-ai/sdk', () => ({
-  default: vi.fn().mockImplementation(() => ({
-    messages: { create: mockCreate },
-  })),
-}));
-
 import { IntentClassifier } from '../../packages/agent-engine/src/classifier.js';
 import { ProductRAG, type ProductQueryFn } from '../../packages/agent-engine/src/rag.js';
 import { ConversationalResponder } from '../../packages/agent-engine/src/responder.js';
@@ -47,9 +38,22 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   };
 }
 
-function makeAnthropicResponse(text: string) {
+function mockFetchOpenRouter(content: string) {
   return {
-    content: [{ type: 'text', text }],
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [{ message: { content } }],
+    }),
+    text: async () => content,
+  };
+}
+
+function mockFetchError(status = 500) {
+  return {
+    ok: false,
+    status,
+    text: async () => 'Internal Server Error',
   };
 }
 
@@ -58,6 +62,7 @@ describeIntegration('Agent Flow Integration', () => {
   let engine: AgentEngine;
   let config: AgentConfig;
   let dateNowSpy: ReturnType<typeof vi.spyOn>;
+  let fetchSpy: ReturnType<typeof vi.fn>;
   let currentTime: number;
 
   beforeEach(() => {
@@ -65,6 +70,7 @@ describeIntegration('Agent Flow Integration', () => {
 
     currentTime = 1000000;
     dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(currentTime);
+    fetchSpy = vi.spyOn(globalThis, 'fetch') as unknown as ReturnType<typeof vi.fn>;
 
     queryFn = vi.fn();
     config = makeConfig();
@@ -78,12 +84,13 @@ describeIntegration('Agent Flow Integration', () => {
 
   afterEach(() => {
     dateNowSpy.mockRestore();
+    vi.restoreAllMocks();
   });
 
   it('"tenis nike barato" -> classifies as product_query -> finds Nike products -> generates response with affiliate link', async () => {
     // First call: classification
-    mockCreate.mockResolvedValueOnce(
-      makeAnthropicResponse(
+    fetchSpy.mockResolvedValueOnce(
+      mockFetchOpenRouter(
         JSON.stringify({
           intent: 'product_query',
           confidence: 0.93,
@@ -103,8 +110,8 @@ describeIntegration('Agent Flow Integration', () => {
     ]);
 
     // Second call: response generation
-    mockCreate.mockResolvedValueOnce(
-      makeAnthropicResponse(
+    fetchSpy.mockResolvedValueOnce(
+      mockFetchOpenRouter(
         'Achei uns Nike legais! O Air Max 90 ta por R$399.90, era R$599.90. Confere: https://aff.link/nike-air-max',
       ),
     );
@@ -124,8 +131,8 @@ describeIntegration('Agent Flow Integration', () => {
   });
 
   it('"bom dia galera" -> classifies as off_topic -> no response', async () => {
-    mockCreate.mockResolvedValueOnce(
-      makeAnthropicResponse(
+    fetchSpy.mockResolvedValueOnce(
+      mockFetchOpenRouter(
         JSON.stringify({
           intent: 'off_topic',
           confidence: 0.99,
@@ -138,16 +145,15 @@ describeIntegration('Agent Flow Integration', () => {
 
     expect(result.response).toBeNull();
     expect(result.interaction.intent).toBe('off_topic');
-    // queryFn should not have been called
     expect(queryFn).not.toHaveBeenCalled();
-    // Only 1 Anthropic call (classification), no response generation
-    expect(mockCreate).toHaveBeenCalledTimes(1);
+    // Only 1 fetch call (classification), no response generation
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
   it('rapid messages in same group -> second one hits cooldown -> no response', async () => {
     // First message goes through
-    mockCreate.mockResolvedValueOnce(
-      makeAnthropicResponse(
+    fetchSpy.mockResolvedValueOnce(
+      mockFetchOpenRouter(
         JSON.stringify({
           intent: 'product_query',
           confidence: 0.9,
@@ -156,8 +162,8 @@ describeIntegration('Agent Flow Integration', () => {
       ),
     );
     queryFn.mockResolvedValueOnce([makeProduct({ id: 'p1' })]);
-    mockCreate.mockResolvedValueOnce(
-      makeAnthropicResponse('Achei um fone! https://aff.link/fone'),
+    fetchSpy.mockResolvedValueOnce(
+      mockFetchOpenRouter('Achei um fone! https://aff.link/fone'),
     );
 
     const result1 = await engine.processMessage('quero um fone', 'group-1', 'telegram');
@@ -170,13 +176,13 @@ describeIntegration('Agent Flow Integration', () => {
     const result2 = await engine.processMessage('e um tenis?', 'group-1', 'telegram');
     expect(result2.response).toBeNull();
     // Classification should not even have been called for the second message
-    expect(mockCreate).toHaveBeenCalledTimes(2); // only from first message
+    expect(fetchSpy).toHaveBeenCalledTimes(2); // only from first message
   });
 
   it('different groups -> no cooldown interference', async () => {
     // Message to group-1
-    mockCreate.mockResolvedValueOnce(
-      makeAnthropicResponse(
+    fetchSpy.mockResolvedValueOnce(
+      mockFetchOpenRouter(
         JSON.stringify({
           intent: 'product_query',
           confidence: 0.9,
@@ -185,16 +191,16 @@ describeIntegration('Agent Flow Integration', () => {
       ),
     );
     queryFn.mockResolvedValueOnce([makeProduct()]);
-    mockCreate.mockResolvedValueOnce(
-      makeAnthropicResponse('Resposta grupo 1'),
+    fetchSpy.mockResolvedValueOnce(
+      mockFetchOpenRouter('Resposta grupo 1'),
     );
 
     const r1 = await engine.processMessage('msg', 'group-1', 'telegram');
     expect(r1.response).not.toBeNull();
 
     // Message to group-2 should also work
-    mockCreate.mockResolvedValueOnce(
-      makeAnthropicResponse(
+    fetchSpy.mockResolvedValueOnce(
+      mockFetchOpenRouter(
         JSON.stringify({
           intent: 'product_query',
           confidence: 0.9,
@@ -203,8 +209,8 @@ describeIntegration('Agent Flow Integration', () => {
       ),
     );
     queryFn.mockResolvedValueOnce([makeProduct()]);
-    mockCreate.mockResolvedValueOnce(
-      makeAnthropicResponse('Resposta grupo 2'),
+    fetchSpy.mockResolvedValueOnce(
+      mockFetchOpenRouter('Resposta grupo 2'),
     );
 
     const r2 = await engine.processMessage('msg', 'group-2', 'telegram');
@@ -216,13 +222,13 @@ describeIntegration('Agent Flow Integration', () => {
     const result = await engine.processMessage('quero um iphone', 'group-999', 'telegram');
 
     expect(result.response).toBeNull();
-    expect(mockCreate).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
     expect(queryFn).not.toHaveBeenCalled();
   });
 
   it('recommendation intent triggers RAG and response', async () => {
-    mockCreate.mockResolvedValueOnce(
-      makeAnthropicResponse(
+    fetchSpy.mockResolvedValueOnce(
+      mockFetchOpenRouter(
         JSON.stringify({
           intent: 'recommendation',
           confidence: 0.88,
@@ -233,8 +239,8 @@ describeIntegration('Agent Flow Integration', () => {
     queryFn.mockResolvedValueOnce([
       makeProduct({ id: 'fone-1', name: 'JBL Tune 510BT', price: 199.9, category: 'audio' }),
     ]);
-    mockCreate.mockResolvedValueOnce(
-      makeAnthropicResponse('Recomendo o JBL Tune 510BT por R$199.90! https://aff.link/jbl'),
+    fetchSpy.mockResolvedValueOnce(
+      mockFetchOpenRouter('Recomendo o JBL Tune 510BT por R$199.90! https://aff.link/jbl'),
     );
 
     const result = await engine.processMessage('me sugere um fone bluetooth bom', 'group-1', 'telegram');
@@ -245,7 +251,7 @@ describeIntegration('Agent Flow Integration', () => {
   });
 
   it('API error during classification returns null (off_topic fallback)', async () => {
-    mockCreate.mockRejectedValueOnce(new Error('API timeout'));
+    fetchSpy.mockRejectedValueOnce(new Error('API timeout'));
 
     const result = await engine.processMessage('quero um produto', 'group-1', 'telegram');
 

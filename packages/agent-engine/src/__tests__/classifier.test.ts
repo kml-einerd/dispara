@@ -1,21 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { IntentClassifier } from '../classifier.js';
 
-function mockFetchResponse(content: string, ok = true, status = 200) {
-  return vi.fn().mockResolvedValueOnce({
-    ok,
-    status,
-    text: async () => content,
-    json: async () => ({
-      choices: [{ message: { content } }],
-    }),
-  });
-}
-
-function mockFetchError() {
-  return vi.fn().mockRejectedValueOnce(new Error('Network error'));
-}
-
 describe('IntentClassifier', () => {
   let classifier: IntentClassifier;
   let fetchSpy: ReturnType<typeof vi.fn>;
@@ -54,47 +39,71 @@ describe('IntentClassifier', () => {
     });
   }
 
-  it('classifies product_query correctly', async () => {
+  it('classifies busca_produto correctly', async () => {
     mockSuccess({
-      intent: 'product_query',
+      intent: 'busca_produto',
       confidence: 0.95,
       entities: { productName: 'iPhone 15', brand: 'Apple' },
     });
 
     const result = await classifier.classifyIntent('qual o preco do iPhone 15?');
 
-    expect(result.intent).toBe('product_query');
+    expect(result.intent).toBe('busca_produto');
     expect(result.confidence).toBe(0.95);
     expect(result.entities.productName).toBe('iPhone 15');
     expect(result.entities.brand).toBe('Apple');
   });
 
-  it('classifies price_check correctly', async () => {
+  it('classifies gerar_copy correctly', async () => {
     mockSuccess({
-      intent: 'price_check',
+      intent: 'gerar_copy',
       confidence: 0.88,
-      entities: { maxPrice: 100 },
+      entities: {},
     });
 
-    const result = await classifier.classifyIntent('tem algo barato abaixo de R$100?');
+    const result = await classifier.classifyIntent('gera uma copy pra esse fone');
 
-    expect(result.intent).toBe('price_check');
+    expect(result.intent).toBe('gerar_copy');
     expect(result.confidence).toBe(0.88);
-    expect(result.entities.maxPrice).toBe(100);
   });
 
-  it('classifies recommendation correctly', async () => {
+  it('classifies disparar correctly', async () => {
     mockSuccess({
-      intent: 'recommendation',
+      intent: 'disparar',
       confidence: 0.91,
-      entities: { category: 'fone bluetooth' },
+      entities: {},
     });
 
-    const result = await classifier.classifyIntent('me sugere um fone bluetooth bom');
+    const result = await classifier.classifyIntent('dispara essa promo pros grupos');
 
-    expect(result.intent).toBe('recommendation');
+    expect(result.intent).toBe('disparar');
     expect(result.confidence).toBe(0.91);
-    expect(result.entities.category).toBe('fone bluetooth');
+  });
+
+  it('classifies status correctly', async () => {
+    mockSuccess({
+      intent: 'status',
+      confidence: 0.93,
+      entities: {},
+    });
+
+    const result = await classifier.classifyIntent('como ta a fila de disparo?');
+
+    expect(result.intent).toBe('status');
+    expect(result.confidence).toBe(0.93);
+  });
+
+  it('classifies ajuda correctly', async () => {
+    mockSuccess({
+      intent: 'ajuda',
+      confidence: 0.90,
+      entities: {},
+    });
+
+    const result = await classifier.classifyIntent('como eu uso esse bot?');
+
+    expect(result.intent).toBe('ajuda');
+    expect(result.confidence).toBe(0.90);
   });
 
   it('classifies off_topic correctly', async () => {
@@ -155,7 +164,7 @@ describe('IntentClassifier', () => {
 
   it('extracts entities correctly (productName, category, maxPrice, brand)', async () => {
     mockSuccess({
-      intent: 'product_query',
+      intent: 'busca_produto',
       confidence: 0.92,
       entities: {
         productName: 'Galaxy S24',
@@ -204,19 +213,19 @@ describe('IntentClassifier', () => {
 
   it('defaults confidence to 0.5 when confidence is missing from response', async () => {
     mockSuccess({
-      intent: 'product_query',
+      intent: 'busca_produto',
       entities: { productName: 'teste' },
     });
 
     const result = await classifier.classifyIntent('teste');
 
-    expect(result.intent).toBe('product_query');
+    expect(result.intent).toBe('busca_produto');
     expect(result.confidence).toBe(0.5);
   });
 
   it('defaults entities to empty object when missing from response', async () => {
     mockSuccess({
-      intent: 'product_query',
+      intent: 'busca_produto',
       confidence: 0.8,
     });
 

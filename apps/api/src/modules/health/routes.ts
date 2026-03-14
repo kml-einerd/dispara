@@ -2,23 +2,48 @@ import type { FastifyInstance } from 'fastify';
 import { prisma } from '../../lib/prisma.js';
 import { redis } from '../../lib/redis.js';
 
-const APP_VERSION = process.env.npm_package_version || '0.1.0';
+const APP_VERSION = '2.0.0';
+const startedAt = Date.now();
 
 export async function healthRoutes(app: FastifyInstance): Promise<void> {
   /**
    * GET /v1/health
-   * Basic liveness check — always returns 200 if the process is running.
+   * Full health check — verifies DB + Redis connectivity.
+   * Returns 503 if any service is disconnected.
    */
-  app.get('/', async () => ({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    version: APP_VERSION,
-    uptime: process.uptime(),
-  }));
+  app.get('/', async (_request, reply) => {
+    const services: Record<string, string> = {};
+
+    // ── Database check ──
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      services.database = 'connected';
+    } catch {
+      services.database = 'disconnected';
+    }
+
+    // ── Redis check ──
+    try {
+      const pong = await redis.ping();
+      services.redis = pong === 'PONG' ? 'connected' : 'disconnected';
+    } catch {
+      services.redis = 'disconnected';
+    }
+
+    const allHealthy = Object.values(services).every((s) => s === 'connected');
+
+    reply.status(allHealthy ? 200 : 503).send({
+      status: allHealthy ? 'ok' : 'degraded',
+      version: APP_VERSION,
+      uptime: Math.floor((Date.now() - startedAt) / 1000),
+      timestamp: new Date().toISOString(),
+      services,
+    });
+  });
 
   /**
    * GET /v1/health/ready
-   * Readiness check — verifies DB + Redis connectivity.
+   * Readiness check — verifies DB + Redis connectivity with latency details.
    */
   app.get('/ready', async (_request, reply) => {
     const checks: Record<string, { status: string; latencyMs?: number; error?: string }> = {};

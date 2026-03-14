@@ -16,6 +16,8 @@ import { authRoutes } from './modules/auth/routes.js';
 import { gateRoutes } from './modules/gate/routes.js';
 import { feedRoutes } from './modules/feeds/routes.js';
 import { linkRoutes } from './modules/links/routes.js';
+import { oauthRoutes } from './modules/oauth/routes.js';
+import { commissionRoutes } from './modules/commissions/routes.js';
 import { tenantMiddleware } from './middleware/tenant.js';
 import { usageGateMiddleware } from './middleware/usage-gate.js';
 import { errorHandler } from './middleware/error-handler.js';
@@ -38,7 +40,14 @@ app.decorate('redis', redis);
 
 // ── Plugins ──
 await app.register(cors, { origin: true });
-await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
+await app.register(rateLimit, {
+  max: 100,
+  timeWindow: '1 minute',
+  keyGenerator: (req) => {
+    // Per-tenant rate limiting (falls back to IP if no tenant)
+    return (req.headers['x-tenant-id'] as string) || req.ip;
+  },
+});
 await app.register(fastifyWebSocket);
 
 // ── WebSocket Gateway ──
@@ -98,6 +107,8 @@ await app.register(authRoutes, { prefix: '/v1/auth' });
 await app.register(gateRoutes, { prefix: '/v1/gate' });
 await app.register(feedRoutes, { prefix: '/v1/feeds' });
 await app.register(linkRoutes, { prefix: '/v1/links' });
+await app.register(oauthRoutes, { prefix: '/v1/oauth' });
+await app.register(commissionRoutes, { prefix: '/v1/commissions' });
 
 // ── Graceful shutdown ──
 const signals = ['SIGTERM', 'SIGINT'] as const;

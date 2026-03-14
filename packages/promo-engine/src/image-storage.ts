@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from '@dispara/shared';
+
 /**
  * Interface for storing and serving promo images.
  * V1 uses Supabase Storage as the backend.
@@ -11,6 +13,16 @@ export interface ImageStorage {
    * @returns Public URL of the stored image
    */
   upload(tenantId: string, promoId: string, imageUrl: string): Promise<string>;
+
+  /**
+   * Uploads a raw buffer (e.g. from AI image generation) to storage.
+   * @param tenantId - Tenant UUID for path scoping
+   * @param promoId - Promo UUID for organizing images
+   * @param buffer - Image data as ArrayBuffer
+   * @param contentType - MIME type (e.g. "image/png")
+   * @returns Public URL of the stored image
+   */
+  uploadBuffer(tenantId: string, promoId: string, buffer: ArrayBuffer, contentType: string): Promise<string>;
 
   /**
    * Gets the public URL for a stored image path.
@@ -65,7 +77,7 @@ export class SupabaseImageStorage implements ImageStorage {
 
     try {
       // Download image from source URL
-      const imageResponse = await fetch(imageUrl);
+      const imageResponse = await fetchWithTimeout(imageUrl);
       if (!imageResponse.ok) {
         throw new Error(`Failed to download image: ${imageResponse.status} ${imageResponse.statusText}`);
       }
@@ -75,7 +87,7 @@ export class SupabaseImageStorage implements ImageStorage {
 
       // Upload to Supabase Storage
       const uploadUrl = `${this.supabaseUrl}/storage/v1/object/${this.bucket}/${storagePath}`;
-      const uploadResponse = await fetch(uploadUrl, {
+      const uploadResponse = await fetchWithTimeout(uploadUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.supabaseServiceKey}`,
@@ -96,6 +108,32 @@ export class SupabaseImageStorage implements ImageStorage {
       console.error(`[SupabaseImageStorage] Upload failed for ${imageUrl}:`, error);
       return imageUrl;
     }
+  }
+
+  /**
+   * Uploads a raw buffer to Supabase Storage (for AI-generated images).
+   */
+  async uploadBuffer(tenantId: string, promoId: string, buffer: ArrayBuffer, contentType: string): Promise<string> {
+    const ext = contentType.split('/')[1] || 'png';
+    const storagePath = `${tenantId}/promos/${promoId}/generated.${ext}`;
+
+    const uploadUrl = `${this.supabaseUrl}/storage/v1/object/${this.bucket}/${storagePath}`;
+    const uploadResponse = await fetchWithTimeout(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.supabaseServiceKey}`,
+        'Content-Type': contentType,
+        'x-upsert': 'true',
+      },
+      body: buffer,
+    });
+
+    if (!uploadResponse.ok) {
+      const errorBody = await uploadResponse.text();
+      throw new Error(`Supabase upload failed: ${uploadResponse.status} - ${errorBody}`);
+    }
+
+    return this.getPublicUrl(storagePath);
   }
 
   /**

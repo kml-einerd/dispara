@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import pino from 'pino';
 import { IntentClassifier } from './classifier.js';
+import { handleDisparar, handleStatus, type DispatchDeps, type StatusDeps } from './handlers.js';
 import { ProductRAG } from './rag.js';
 import { ConversationalResponder } from './responder.js';
-import type { AgentConfig, AgentInteraction } from './types.js';
+import type { AgentConfig, AgentInteraction, Intent } from './types.js';
 
 const logger = pino({ name: 'agent-engine' });
 
@@ -18,23 +19,34 @@ export interface ProcessMessageResult {
   interaction: AgentInteraction;
 }
 
+/** Intents that trigger RAG product search */
+const RAG_INTENTS: Intent[] = ['busca_produto'];
+
+/** Intents the agent should respond to (non-off_topic) */
+const ACTIONABLE_INTENTS: Intent[] = ['busca_produto', 'gerar_copy', 'disparar', 'status', 'ajuda'];
+
 export class AgentEngine {
   private classifier: IntentClassifier;
   private rag: ProductRAG;
   private responder: ConversationalResponder;
   private config: AgentConfig;
   private cooldowns: Map<string, CooldownEntry> = new Map();
+  private dispatchDeps?: DispatchDeps;
+  private statusDeps?: StatusDeps;
 
   constructor(
     classifier: IntentClassifier,
     rag: ProductRAG,
     responder: ConversationalResponder,
     config: AgentConfig,
+    deps?: { dispatchDeps?: DispatchDeps; statusDeps?: StatusDeps },
   ) {
     this.classifier = classifier;
     this.rag = rag;
     this.responder = responder;
     this.config = config;
+    this.dispatchDeps = deps?.dispatchDeps;
+    this.statusDeps = deps?.statusDeps;
   }
 
   async processMessage(
@@ -86,17 +98,36 @@ export class AgentEngine {
     );
 
     // 4. If off_topic, return null (silence)
-    if (classification.intent === 'off_topic') {
+    if (!ACTIONABLE_INTENTS.includes(classification.intent)) {
       baseInteraction.responseTimeMs = Date.now() - startTime;
       return { response: null, interaction: baseInteraction };
     }
 
-    // 5. Search products via RAG
-    const ragResults = await this.rag.searchProducts(
-      this.config.tenantId,
-      message,
-      classification.entities,
-    );
+    // 5a. Handle disparar/status with real handlers if deps provided
+    if (classification.intent === 'disparar' && this.dispatchDeps) {
+      const responseText = await handleDisparar(this.config.tenantId, this.dispatchDeps);
+      const delay = this.calculateDelay();
+      await this.sleep(delay);
+      this.recordResponse(groupId);
+      baseInteraction.responseText = responseText;
+      baseInteraction.responseTimeMs = Date.now() - startTime;
+      return { response: responseText, interaction: baseInteraction };
+    }
+
+    if (classification.intent === 'status' && this.statusDeps) {
+      const responseText = await handleStatus(this.config.tenantId, this.statusDeps);
+      const delay = this.calculateDelay();
+      await this.sleep(delay);
+      this.recordResponse(groupId);
+      baseInteraction.responseText = responseText;
+      baseInteraction.responseTimeMs = Date.now() - startTime;
+      return { response: responseText, interaction: baseInteraction };
+    }
+
+    // 5. Search products via RAG only for product-related intents
+    const ragResults = RAG_INTENTS.includes(classification.intent)
+      ? await this.rag.searchProducts(this.config.tenantId, message, classification.entities)
+      : [];
     baseInteraction.productIds = ragResults.map((r) => r.product.id);
 
     // 6. Generate response
@@ -139,12 +170,10 @@ export class AgentEngine {
     const now = Date.now();
     const cooldownMs = this.config.cooldownMinutes * 60 * 1000;
 
-    // Check time-based cooldown
     if (now - entry.lastResponseAt < cooldownMs) {
       return true;
     }
 
-    // Check hourly rate limit
     const oneHour = 60 * 60 * 1000;
     if (now - entry.hourStart < oneHour && entry.responsesThisHour >= this.config.maxResponsesPerHour) {
       return true;

@@ -1,8 +1,9 @@
 import type { MarketplaceAdapter, Product } from '@dispara/marketplace';
-import type { CopyVariation } from '@dispara/shared';
+import type { CopyVariation, Product as SharedProduct } from '@dispara/shared';
 import { detectMarketplace } from '@dispara/shared';
 import { CopyGenerator } from './copy-generator.js';
 import type { ImageStorage } from './image-storage.js';
+import type { ImageGenerator } from './image-generator.js';
 
 /** Input for promo generation */
 export interface PromoInput {
@@ -28,6 +29,8 @@ export interface PromoResult {
   copyVariations: CopyVariation[];
   /** Product image URL (from marketplace or stored copy) */
   imageUrl: string;
+  /** AI-generated promo image URL (if ImageGenerator is configured) */
+  generatedImageUrl?: string;
   /** Marketplace identifier */
   marketplace: string;
   /** Timestamp of generation */
@@ -51,20 +54,25 @@ export class PromoEngine {
   private readonly marketplaceAdapters: Map<string, MarketplaceAdapter>;
   private readonly copyGenerator: CopyGenerator;
   private readonly imageStorage?: ImageStorage;
+  private readonly imageGenerator?: ImageGenerator;
+
 
   /**
    * @param marketplaceAdapters - Map of marketplace name to adapter instance
    * @param copyGenerator - Claude Haiku copy generator
    * @param imageStorage - Optional image storage (Supabase for v1)
+   * @param imageGenerator - Optional AI image generator
    */
   constructor(
     marketplaceAdapters: Map<string, MarketplaceAdapter>,
     copyGenerator: CopyGenerator,
     imageStorage?: ImageStorage,
+    imageGenerator?: ImageGenerator,
   ) {
     this.marketplaceAdapters = marketplaceAdapters;
     this.copyGenerator = copyGenerator;
     this.imageStorage = imageStorage;
+    this.imageGenerator = imageGenerator;
   }
 
   /**
@@ -93,7 +101,7 @@ export class PromoEngine {
       if (!detected) {
         throw new Error(
           `Could not detect marketplace from URL: ${input.url}. ` +
-          `Supported: AMAZON, SHOPEE, MERCADOLIVRE, MAGALU, ALIEXPRESS`,
+          `Supported: AMAZON, SHOPEE, MERCADOLIVRE, MAGALU`,
         );
       }
       marketplace = detected;
@@ -135,6 +143,26 @@ export class PromoEngine {
       }
     }
 
+    // Step 6: Generate AI promo image (if generator configured)
+    let generatedImageUrl: string | undefined;
+    if (this.imageGenerator) {
+      try {
+        const generated = await this.imageGenerator.generatePromoImage(product as any);
+
+        if (this.imageStorage && generated.imageUrl.startsWith('data:')) {
+          const base64Data = generated.imageUrl.split(',')[1]!;
+          const buffer = Buffer.from(base64Data, 'base64').buffer;
+          generatedImageUrl = await this.imageStorage.uploadBuffer(
+            input.tenantId, crypto.randomUUID(), buffer, 'image/png',
+          );
+        } else {
+          generatedImageUrl = generated.imageUrl;
+        }
+      } catch (err) {
+        console.warn('[PromoEngine] Image generation failed, continuing without:', err);
+      }
+    }
+
     const elapsed = Date.now() - startTime;
     if (elapsed > 5000) {
       console.warn(`[PromoEngine] Slow generation: ${elapsed}ms (target: <5000ms)`);
@@ -145,6 +173,7 @@ export class PromoEngine {
       affiliateUrl,
       copyVariations,
       imageUrl,
+      generatedImageUrl,
       marketplace,
       generatedAt: new Date(),
     };

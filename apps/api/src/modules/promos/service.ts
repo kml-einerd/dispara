@@ -1,15 +1,37 @@
 import { Prisma } from '@prisma/client';
+import { fetchWithTimeout } from '@dispara/shared';
 import { prisma } from '../../lib/prisma.js';
 import {
   scrapeProduct,
   searchProduct,
   generateCopyVariations,
 } from '../../lib/promo-engine-mock.js';
+import { CopyGenerator, ImageGenerator, SupabaseImageStorage } from '@dispara/promo-engine';
+import type { ImageStyle, ImageGeneratorOptions } from '@dispara/promo-engine';
 import type {
   CreatePromoInput,
   ListPromosInput,
   UpdatePromoInput,
+  GenerateImageInput,
 } from './schemas.js';
+
+const copyGenerator = process.env.OPENROUTER_API_KEY
+  ? new CopyGenerator(process.env.OPENROUTER_API_KEY)
+  : null;
+
+const imageGenerator = process.env.GEMINI_API_KEY
+  ? new ImageGenerator(process.env.GEMINI_API_KEY, {
+      fallbackKey: process.env.GEMINI_API_KEY_FALLBACK,
+    })
+  : null;
+
+const imageStorage =
+  process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
+    ? new SupabaseImageStorage(
+        process.env.SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY,
+      )
+    : null;
 
 // ── Types ──
 
@@ -231,7 +253,24 @@ export class PromoService {
       category: promo.category,
     };
 
-    const copies = generateCopyVariations(product, count);
+    let copies: Array<{ label: string; copyText: string }>;
+
+    if (copyGenerator) {
+      const variations = await copyGenerator.generateVariations({
+        id: promo.id,
+        name: product.productName,
+        originalPrice: product.originalPrice,
+        promoPrice: product.promoPrice,
+        discountPercent: product.discountPercent,
+        imageUrl: product.imageUrl ?? '',
+        productUrl: product.productUrl,
+        marketplace: product.marketplace as any,
+        category: product.category ?? undefined,
+      }, count);
+      copies = variations.map((v) => ({ label: v.label, copyText: v.text }));
+    } else {
+      copies = generateCopyVariations(product, count);
+    }
 
     const created = await prisma.$transaction(
       copies.map((c) =>
@@ -248,14 +287,195 @@ export class PromoService {
 
     return created;
   }
+
+  /**
+   * Generate a promotional image for a promo using AI.
+   */
+  static async generateImage(
+    tenantId: string,
+    promoId: string,
+    input: GenerateImageInput,
+  ): Promise<{ imageUrl: string; style: string; dimensions: { width: number; height: number } }> {
+    if (!imageGenerator) {
+      throw new ServiceUnavailableError('Image generation not configured (GEMINI_API_KEY missing)');
+    }
+
+    const promo = await prisma.promo.findFirst({
+      where: { id: promoId, tenantId },
+    });
+
+    if (!promo) {
+      throw new NotFoundError(`Promo ${promoId} not found`);
+    }
+
+    const product = {
+      id: promo.id,
+      name: promo.productName,
+      originalPrice: Number(promo.originalPrice),
+      promoPrice: Number(promo.promoPrice),
+      discountPercent: promo.discountPercent,
+      imageUrl: promo.imageUrl ?? '',
+      productUrl: promo.productUrl,
+      marketplace: promo.marketplace as any,
+      category: promo.category ?? undefined,
+    };
+
+    const options: ImageGeneratorOptions = {
+      withText: input.withText,
+      textOverlay: input.textOverlay
+        ? [input.textOverlay.headline, input.textOverlay.subtitle, input.textOverlay.cta]
+            .filter(Boolean)
+            .join(' — ')
+        : undefined,
+      aspectRatio: input.aspectRatio,
+    };
+
+    const result = await imageGenerator.generatePromoImage(
+      product,
+      input.style as ImageStyle,
+      options,
+    );
+
+    // Upload base64 image to Supabase Storage if available
+    let finalImageUrl = result.imageUrl;
+    if (imageStorage && result.imageUrl.startsWith('data:image/')) {
+      const base64Data = result.imageUrl.split(',')[1]!;
+      const mimeMatch = result.imageUrl.match(/data:(image\/\w+);/);
+      const ext = mimeMatch ? mimeMatch[1]!.split('/')[1] : 'png';
+      const storagePath = `${tenantId}/promos/${promoId}/generated-${Date.now()}.${ext}`;
+
+      const buffer = Buffer.from(base64Data, 'base64');
+      const uploadUrl = `${process.env.SUPABASE_URL}/storage/v1/object/promo-images/${storagePath}`;
+
+      const uploadResponse = await fetchWithTimeout(uploadUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+          'Content-Type': `image/${ext}`,
+          'x-upsert': 'true',
+        },
+        body: buffer,
+      });
+
+      if (uploadResponse.ok) {
+        finalImageUrl = imageStorage.getPublicUrl(storagePath);
+      }
+    }
+
+    // Save to PromoVariation with image
+    await prisma.promoVariation.create({
+      data: {
+        promoId,
+        label: `image-${input.style}`,
+        copyText: '',
+        imageUrl: finalImageUrl,
+        isDefault: false,
+      },
+    });
+
+    // Also update promo imageUrl if it doesn't have one
+    if (!promo.imageUrl) {
+      await prisma.promo.update({
+        where: { id: promoId },
+        data: { imageUrl: finalImageUrl },
+      });
+    }
+
+    const aspectDimensions: Record<string, { width: number; height: number }> = {
+      '1:1': { width: 1024, height: 1024 },
+      '9:16': { width: 768, height: 1365 },
+      '16:9': { width: 1365, height: 768 },
+      '4:5': { width: 819, height: 1024 },
+    };
+
+    return {
+      imageUrl: finalImageUrl,
+      style: input.style,
+      dimensions: aspectDimensions[input.aspectRatio] ?? { width: 1024, height: 1024 },
+    };
+  }
+
+  /**
+   * Generate copy variations with streaming (SSE).
+   * Yields each variation as it's generated by the LLM.
+   */
+  static async *generateCopyStream(
+    tenantId: string,
+    promoId: string,
+    count = 5,
+  ): AsyncGenerator<{ label: string; copyText: string }> {
+    const promo = await prisma.promo.findFirst({
+      where: { id: promoId, tenantId },
+    });
+
+    if (!promo) {
+      throw new NotFoundError(`Promo ${promoId} not found`);
+    }
+
+    if (!copyGenerator) {
+      // Fallback: yield mock copies synchronously
+      const product = {
+        productName: promo.productName,
+        productUrl: promo.productUrl,
+        originalPrice: Number(promo.originalPrice),
+        promoPrice: Number(promo.promoPrice),
+        discountPercent: promo.discountPercent,
+        imageUrl: promo.imageUrl,
+        marketplace: promo.marketplace,
+        affiliateUrl: promo.affiliateUrl,
+        category: promo.category,
+      };
+      const copies = generateCopyVariations(product, count);
+      for (const c of copies) {
+        yield c;
+      }
+      return;
+    }
+
+    const product = {
+      id: promo.id,
+      name: promo.productName,
+      originalPrice: Number(promo.originalPrice),
+      promoPrice: Number(promo.promoPrice),
+      discountPercent: promo.discountPercent,
+      imageUrl: promo.imageUrl ?? '',
+      productUrl: promo.productUrl,
+      marketplace: promo.marketplace as any,
+      category: promo.category ?? undefined,
+    };
+
+    const savedVariations: Array<{ label: string; copyText: string; id: string }> = [];
+
+    for await (const variation of copyGenerator.generateVariationsStream(product, count)) {
+      const saved = await prisma.promoVariation.create({
+        data: {
+          promoId,
+          label: variation.label,
+          copyText: variation.text,
+          isDefault: savedVariations.length === 0,
+        },
+      });
+      const result = { label: variation.label, copyText: variation.text, id: saved.id };
+      savedVariations.push(result);
+      yield result;
+    }
+  }
 }
 
-// ── Custom error for not-found ──
+// ── Custom errors ──
 
 export class NotFoundError extends Error {
   public readonly statusCode = 404;
   constructor(message: string) {
     super(message);
     this.name = 'NotFoundError';
+  }
+}
+
+export class ServiceUnavailableError extends Error {
+  public readonly statusCode = 503;
+  constructor(message: string) {
+    super(message);
+    this.name = 'ServiceUnavailableError';
   }
 }

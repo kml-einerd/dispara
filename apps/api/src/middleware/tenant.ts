@@ -2,7 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { supabaseAdmin } from '../lib/supabase.js';
 
 /** Routes that do not require authentication */
-const PUBLIC_PREFIXES = ['/v1/health', '/v1/auth', '/health', '/v1/telegram/webhook'];
+const PUBLIC_PREFIXES = ['/v1/health', '/v1/auth', '/health', '/v1/telegram/webhook', '/v1/oauth/mercadolivre/callback'];
 
 function isPublicRoute(url: string, method?: string): boolean {
   if (PUBLIC_PREFIXES.some((prefix) => url.startsWith(prefix))) return true;

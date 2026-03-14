@@ -3,6 +3,7 @@ import { createMarketplaceAdapter } from '../factory.js';
 import { AmazonAdapter } from '../adapters/amazon.js';
 import { ShopeeAdapter } from '../adapters/shopee.js';
 import { LomadeeAdapter } from '../adapters/lomadee.js';
+import { MercadoLivreAdapter } from '../adapters/mercadolivre.js';
 
 describe('createMarketplaceAdapter (MarketplaceFactory)', () => {
   const amazonCreds = {
@@ -44,14 +45,9 @@ describe('createMarketplaceAdapter (MarketplaceFactory)', () => {
     expect(adapter.marketplace).toBe('MAGALU');
   });
 
-  it('creates LomadeeAdapter for "MERCADOLIVRE"', () => {
+  it('creates MercadoLivreAdapter for "MERCADOLIVRE"', () => {
     const adapter = createMarketplaceAdapter('MERCADOLIVRE', lomadeeCreds);
-    expect(adapter).toBeInstanceOf(LomadeeAdapter);
-  });
-
-  it('creates LomadeeAdapter for "ALIEXPRESS"', () => {
-    const adapter = createMarketplaceAdapter('ALIEXPRESS', lomadeeCreds);
-    expect(adapter).toBeInstanceOf(LomadeeAdapter);
+    expect(adapter).toBeInstanceOf(MercadoLivreAdapter);
   });
 
   it('throws for unknown marketplace', () => {
@@ -62,7 +58,7 @@ describe('createMarketplaceAdapter (MarketplaceFactory)', () => {
 
   it('throws with list of supported marketplaces', () => {
     expect(() => createMarketplaceAdapter('WISH', {})).toThrow(
-      'Supported marketplaces: AMAZON, SHOPEE, MAGALU, MERCADOLIVRE, ALIEXPRESS',
+      'Supported marketplaces: AMAZON, SHOPEE, MAGALU, MERCADOLIVRE',
     );
   });
 

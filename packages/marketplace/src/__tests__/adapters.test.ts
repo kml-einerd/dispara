@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { AmazonAdapter } from '../adapters/amazon.js';
-import { ShopeeAdapter } from '../adapters/shopee.js';
 import { LomadeeAdapter } from '../adapters/lomadee.js';
 import type { Product } from '../types.js';
 
@@ -134,78 +133,7 @@ describe('AmazonAdapter', () => {
   });
 });
 
-// ── Shopee Adapter ──
-
-describe('ShopeeAdapter', () => {
-  const adapter = new ShopeeAdapter({
-    appId: 'test-app-id',
-    appSecret: 'test-app-secret',
-  });
-
-  it('has correct marketplace identifier', () => {
-    expect(adapter.marketplace).toBe('SHOPEE');
-  });
-
-  describe('searchProducts()', () => {
-    it('returns array of products', async () => {
-      const products = await adapter.searchProducts('fone bluetooth');
-      expect(Array.isArray(products)).toBe(true);
-      expect(products.length).toBeGreaterThan(0);
-    });
-
-    it('returns products with all required fields', async () => {
-      const products = await adapter.searchProducts('fone');
-      for (const product of products) {
-        assertValidProduct(product);
-        expect(product.marketplace).toBe('SHOPEE');
-      }
-    });
-
-    it('respects limit option', async () => {
-      const products = await adapter.searchProducts('eletrônicos', { limit: 3 });
-      expect(products.length).toBeLessThanOrEqual(3);
-    });
-
-    it('filters by price range', async () => {
-      const products = await adapter.searchProducts('eletrônicos', {
-        minPrice: 50,
-        maxPrice: 200,
-      });
-      for (const product of products) {
-        expect(product.promoPrice).toBeGreaterThanOrEqual(50);
-        expect(product.promoPrice).toBeLessThanOrEqual(200);
-      }
-    });
-
-    it('sorts by discount descending', async () => {
-      const products = await adapter.searchProducts('eletrônicos', { sortBy: 'discount' });
-      for (let i = 1; i < products.length; i++) {
-        expect(products[i]!.discountPercent).toBeLessThanOrEqual(products[i - 1]!.discountPercent);
-      }
-    });
-  });
-
-  describe('generateAffiliateLink()', () => {
-    it('returns valid shortened URL', async () => {
-      const url = await adapter.generateAffiliateLink('https://shopee.com.br/product/123456/1001');
-      expect(url).toMatch(/^https:\/\/shp\.ee\/aff_/);
-    });
-  });
-
-  describe('getProductDetails()', () => {
-    it('returns single product with correct fields', async () => {
-      const product = await adapter.getProductDetails('https://shopee.com.br/product/123456/1001');
-      assertValidProduct(product);
-      expect(product.marketplace).toBe('SHOPEE');
-    });
-
-    it('extracts shop and item IDs from URL', async () => {
-      const product = await adapter.getProductDetails('https://shopee.com.br/product/999/2222');
-      expect(product.metadata?.shopId).toBe('999');
-      expect(product.metadata?.itemId).toBe('2222');
-    });
-  });
-});
+// Shopee tests are in shopee.test.ts (requires fetch mocking)
 
 // ── Lomadee Adapter ──
 

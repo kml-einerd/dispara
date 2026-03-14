@@ -71,20 +71,6 @@ describe('detectMarketplace()', () => {
     });
   });
 
-  describe('AliExpress URLs', () => {
-    it('detects aliexpress.com', () => {
-      expect(
-        detectMarketplace('https://pt.aliexpress.com/item/1234567890.html'),
-      ).toBe('ALIEXPRESS');
-    });
-
-    it('detects s.click.aliexpress short link', () => {
-      expect(detectMarketplace('https://s.click.aliexpress.com/e/_abc123')).toBe(
-        'ALIEXPRESS',
-      );
-    });
-  });
-
   describe('unknown URLs', () => {
     it('returns null for unknown domains', () => {
       expect(detectMarketplace('https://www.google.com/search?q=fone')).toBeNull();
@@ -227,14 +213,13 @@ describe('getWarmupLimits()', () => {
 });
 
 describe('MARKETPLACE_CONFIGS', () => {
-  it('has all 5 marketplace configs', () => {
+  it('has all 4 marketplace configs', () => {
     const keys = Object.keys(MARKETPLACE_CONFIGS);
     expect(keys).toContain('SHOPEE');
     expect(keys).toContain('AMAZON');
     expect(keys).toContain('MERCADOLIVRE');
     expect(keys).toContain('MAGALU');
-    expect(keys).toContain('ALIEXPRESS');
-    expect(keys).toHaveLength(5);
+    expect(keys).toHaveLength(4);
   });
 
   it('each config has required fields', () => {
