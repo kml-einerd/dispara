@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { Queue } from 'bullmq';
 import { prisma } from '../../lib/prisma.js';
 import { redis } from '../../lib/redis.js';
-import { QUEUES } from '@dispara/shared';
+import { QUEUES, fetchWithTimeout } from '@dispara/shared';
 import {
   registerBotSchema,
   updateChannelSchema,
@@ -19,7 +19,7 @@ export async function telegramRoutes(app: FastifyInstance): Promise<void> {
     // Validate bot token by calling Telegram getMe API
     let botInfo: { id: number; username: string; first_name: string };
     try {
-      const response = await fetch(`https://api.telegram.org/bot${input.botToken}/getMe`);
+      const response = await fetchWithTimeout(`https://api.telegram.org/bot${input.botToken}/getMe`);
       const data = (await response.json()) as {
         ok: boolean;
         result?: { id: number; username: string; first_name: string };

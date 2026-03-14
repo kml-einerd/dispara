@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { fetchWithTimeout } from '@dispara/shared';
 import { prisma } from '../../lib/prisma.js';
 import {
   scrapeProduct,
@@ -346,7 +347,7 @@ export class PromoService {
       const buffer = Buffer.from(base64Data, 'base64');
       const uploadUrl = `${process.env.SUPABASE_URL}/storage/v1/object/promo-images/${storagePath}`;
 
-      const uploadResponse = await fetch(uploadUrl, {
+      const uploadResponse = await fetchWithTimeout(uploadUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,

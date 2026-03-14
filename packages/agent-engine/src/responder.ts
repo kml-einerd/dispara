@@ -1,4 +1,5 @@
 import pino from 'pino';
+import { fetchWithTimeout } from '@dispara/shared';
 import type { AgentConfig, Intent, RAGResult } from './types.js';
 
 const logger = pino({ name: 'conversational-responder' });
@@ -94,7 +95,7 @@ export class ConversationalResponder {
     const systemPrompt = this.buildSystemPrompt(config, products, intent);
 
     try {
-      const res = await fetch(OPENROUTER_URL, {
+      const res = await fetchWithTimeout(OPENROUTER_URL, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
@@ -109,7 +110,7 @@ export class ConversationalResponder {
             { role: 'user', content: originalMessage },
           ],
         }),
-      });
+      }, 30_000);
       const response = res as unknown as { ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<unknown> };
 
       if (!response.ok) {

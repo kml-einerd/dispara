@@ -1,5 +1,5 @@
 import type { Product } from '@dispara/marketplace';
-import type { CopyVariation } from '@dispara/shared';
+import { fetchWithTimeout, type CopyVariation } from '@dispara/shared';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -347,7 +347,7 @@ export class CopyGenerator {
       { role: 'user' as const, content: prompt },
     ];
 
-    const response = await fetch(OPENROUTER_URL, {
+    const response = await fetchWithTimeout(OPENROUTER_URL, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.apiKey}`,
@@ -359,7 +359,7 @@ export class CopyGenerator {
         temperature: config.temperature,
         messages,
       }),
-    });
+    }, 30_000);
 
     if (!response.ok) {
       throw new Error(`OpenRouter API error: ${response.status}`);

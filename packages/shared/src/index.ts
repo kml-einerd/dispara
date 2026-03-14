@@ -241,6 +241,33 @@ export function generateSlug(name: string): string {
     .replace(/^-|-$/g, '');          // trim leading/trailing hyphens
 }
 
+/**
+ * Fetch with timeout — wraps native fetch with an AbortController.
+ * @param url - Request URL
+ * @param options - Standard RequestInit options
+ * @param timeoutMs - Timeout in milliseconds (default: 10000)
+ * @returns Response object
+ * @throws Error with message 'Request timeout' if exceeded
+ */
+export async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 10_000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeoutMs}ms: ${url}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Check if current time is within dispatch window (BRT) */
 export function isWithinDispatchWindow(now: Date = new Date()): boolean {
   const brtHour = (now.getUTCHours() - 3 + 24) % 24;

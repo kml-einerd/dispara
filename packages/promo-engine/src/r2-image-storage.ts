@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from '@dispara/shared';
 import type { ImageStorage } from './image-storage.js';
 
 /**
@@ -42,7 +43,7 @@ export class R2ImageStorage implements ImageStorage {
       buffer = bytes.buffer;
     } else {
       // Handle regular URL (marketplace images)
-      const response = await fetch(imageUrl);
+      const response = await fetchWithTimeout(imageUrl);
       if (!response.ok) throw new Error(`Download failed: ${response.status}`);
       buffer = await response.arrayBuffer();
       contentType = response.headers.get('content-type') ?? 'image/jpeg';
@@ -55,7 +56,7 @@ export class R2ImageStorage implements ImageStorage {
     // Upload via Cloudflare R2 API (S3-compatible PUT)
     const uploadUrl = `https://api.cloudflare.com/client/v4/accounts/${this.accountId}/r2/buckets/${this.bucket}/objects/${storagePath}`;
 
-    const uploadResponse = await fetch(uploadUrl, {
+    const uploadResponse = await fetchWithTimeout(uploadUrl, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${this.accessToken}`,
@@ -79,7 +80,7 @@ export class R2ImageStorage implements ImageStorage {
 
     const uploadUrl = `https://api.cloudflare.com/client/v4/accounts/${this.accountId}/r2/buckets/${this.bucket}/objects/${storagePath}`;
 
-    const uploadResponse = await fetch(uploadUrl, {
+    const uploadResponse = await fetchWithTimeout(uploadUrl, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${this.accessToken}`,

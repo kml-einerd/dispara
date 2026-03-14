@@ -1,4 +1,5 @@
 import pino from 'pino';
+import { fetchWithTimeout } from '@dispara/shared';
 import type { ClassificationResult, Intent } from './types.js';
 
 const logger = pino({ name: 'intent-classifier' });
@@ -57,7 +58,7 @@ export class IntentClassifier {
 
   async classifyIntent(message: string): Promise<ClassificationResult> {
     try {
-      const res = await fetch(OPENROUTER_URL, {
+      const res = await fetchWithTimeout(OPENROUTER_URL, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
@@ -72,7 +73,7 @@ export class IntentClassifier {
             { role: 'user', content: message },
           ],
         }),
-      });
+      }, 15_000);
       const response = res as unknown as { ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<unknown> };
 
       if (!response.ok) {

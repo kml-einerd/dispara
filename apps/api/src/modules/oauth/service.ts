@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import crypto from 'node:crypto';
+import { fetchWithTimeout } from '@dispara/shared';
 
 const ML_CLIENT_ID = process.env.ML_CLIENT_ID!;
 const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET!;
@@ -26,7 +27,7 @@ export class OAuthService {
   }
 
   async exchangeMlCode(code: string, tenantId: string) {
-    const response = await fetch('https://api.mercadolibre.com/oauth/token', {
+    const response = await fetchWithTimeout('https://api.mercadolibre.com/oauth/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify({
@@ -52,7 +53,7 @@ export class OAuthService {
     };
 
     // Fetch user info for label
-    const userResp = await fetch(`https://api.mercadolibre.com/users/${data.user_id}`, {
+    const userResp = await fetchWithTimeout(`https://api.mercadolibre.com/users/${data.user_id}`, {
       headers: { 'Authorization': `Bearer ${data.access_token}` },
     });
     const userInfo = await userResp.json().catch(() => ({ nickname: `ML-${data.user_id}` })) as { nickname: string };
@@ -99,7 +100,7 @@ export class OAuthService {
 
     const creds = account.credentials as { refreshToken: string; userId: number };
 
-    const response = await fetch('https://api.mercadolibre.com/oauth/token', {
+    const response = await fetchWithTimeout('https://api.mercadolibre.com/oauth/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify({
@@ -152,7 +153,7 @@ export class OAuthService {
       .update(appId + timestamp + testPayload + secret)
       .digest('hex');
 
-    const testResp = await fetch('https://open-api.affiliate.shopee.com.br/graphql', {
+    const testResp = await fetchWithTimeout('https://open-api.affiliate.shopee.com.br/graphql', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from '@dispara/shared';
 import type { MarketplaceAdapter, Product, SearchOptions } from '../types.js';
 import { RateLimiter } from '../rate-limiter.js';
 
@@ -69,7 +70,7 @@ export class MercadoLivreAdapter implements MarketplaceAdapter {
       headers['Authorization'] = `Bearer ${this.credentials.accessToken}`;
     }
 
-    const res = await fetch(url, { headers });
+    const res = await fetchWithTimeout(url, { headers });
     if (!res.ok) {
       throw new Error(`ML search failed: ${res.status} ${res.statusText}`);
     }
@@ -153,7 +154,7 @@ export class MercadoLivreAdapter implements MarketplaceAdapter {
       headers['Authorization'] = `Bearer ${this.credentials.accessToken}`;
     }
 
-    const res = await fetch(`${ML_API_BASE}/items/${itemId}`, { headers });
+    const res = await fetchWithTimeout(`${ML_API_BASE}/items/${itemId}`, { headers });
     if (!res.ok) {
       throw new Error(`ML getItem failed: ${res.status} ${res.statusText}`);
     }

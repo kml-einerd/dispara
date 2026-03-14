@@ -1,4 +1,4 @@
-import type { Product } from '@dispara/shared';
+import { fetchWithTimeout, type Product } from '@dispara/shared';
 
 // ============================================
 // Types
@@ -172,7 +172,7 @@ export class ImageGenerator {
   private async attemptGeminiCall(apiKey: string, prompt: string): Promise<string> {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${apiKey}`;
 
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -182,7 +182,7 @@ export class ImageGenerator {
           temperature: 0.4,
         },
       }),
-    });
+    }, 60_000);
 
     if (!response.ok) {
       const errorText = await response.text();

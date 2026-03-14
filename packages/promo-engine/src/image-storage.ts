@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from '@dispara/shared';
+
 /**
  * Interface for storing and serving promo images.
  * V1 uses Supabase Storage as the backend.
@@ -75,7 +77,7 @@ export class SupabaseImageStorage implements ImageStorage {
 
     try {
       // Download image from source URL
-      const imageResponse = await fetch(imageUrl);
+      const imageResponse = await fetchWithTimeout(imageUrl);
       if (!imageResponse.ok) {
         throw new Error(`Failed to download image: ${imageResponse.status} ${imageResponse.statusText}`);
       }
@@ -85,7 +87,7 @@ export class SupabaseImageStorage implements ImageStorage {
 
       // Upload to Supabase Storage
       const uploadUrl = `${this.supabaseUrl}/storage/v1/object/${this.bucket}/${storagePath}`;
-      const uploadResponse = await fetch(uploadUrl, {
+      const uploadResponse = await fetchWithTimeout(uploadUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.supabaseServiceKey}`,
@@ -116,7 +118,7 @@ export class SupabaseImageStorage implements ImageStorage {
     const storagePath = `${tenantId}/promos/${promoId}/generated.${ext}`;
 
     const uploadUrl = `${this.supabaseUrl}/storage/v1/object/${this.bucket}/${storagePath}`;
-    const uploadResponse = await fetch(uploadUrl, {
+    const uploadResponse = await fetchWithTimeout(uploadUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.supabaseServiceKey}`,

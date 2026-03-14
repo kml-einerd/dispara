@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { fetchWithTimeout } from '@dispara/shared';
 import type {
   MarketplaceAdapter,
   Product,
@@ -81,14 +82,14 @@ export class ShopeeAdapter implements MarketplaceAdapter {
     const timestamp = Math.floor(Date.now() / 1000).toString();
     const signature = this.sign(payload, timestamp);
 
-    const response = await fetch(SHOPEE_GRAPHQL_URL, {
+    const response = await fetchWithTimeout(SHOPEE_GRAPHQL_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `SHA256 Credential=${this.credentials.appId},Timestamp=${timestamp},Signature=${signature}`,
       },
       body: payload,
-    });
+    }, 15_000);
 
     if (response.status === 429) {
       const delay = this.retryDelayMs;

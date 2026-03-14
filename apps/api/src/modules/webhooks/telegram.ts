@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { Prisma } from '@prisma/client';
+import { fetchWithTimeout } from '@dispara/shared';
 import { prisma } from '../../lib/prisma.js';
 import { processAgentMessage } from '@dispara/agent-engine';
 import type { ProductForRAG } from '@dispara/agent-engine';
@@ -204,7 +205,7 @@ export async function telegramWebhookRoutes(app: FastifyInstance): Promise<void>
       if (responseText) {
         try {
           const sendUrl = `https://api.telegram.org/bot${channel.bot.botToken}/sendMessage`;
-          const sendResponse = await fetch(sendUrl, {
+          const sendResponse = await fetchWithTimeout(sendUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
