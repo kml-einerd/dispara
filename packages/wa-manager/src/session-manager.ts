@@ -11,6 +11,7 @@ import { Boom } from '@hapi/boom';
 import type { PrismaClient } from '@prisma/client';
 import pino from 'pino';
 import QRCode from 'qrcode';
+import { sendAlert } from '@dispara/shared';
 import { getBrowserTuple } from './browser-fingerprints.js';
 import { usePostgresAuthState, clearPostgresAuthState } from './pg-auth-state.js';
 
@@ -90,11 +91,22 @@ export class WaSessionManager extends EventEmitter {
     };
     this.sessions.set(sessionId, entry);
 
+    // QR scan timeout tracking (2 minutes)
+    let qrTimeout: ReturnType<typeof setTimeout> | null = null;
+
     // Connection update handler
     sock.ev.on('connection.update', async (update: Partial<ConnectionState>) => {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
+        // Reset QR timeout on each new QR code
+        if (qrTimeout) clearTimeout(qrTimeout);
+        qrTimeout = setTimeout(() => {
+          if (entry.status === 'connecting') {
+            sendAlert('warning', 'QR Scan Timeout', `Session \`${sessionId}\` (tenant: \`${tenantId}\`) has not scanned QR code in over 2 minutes.`).catch(() => {});
+          }
+        }, 2 * 60 * 1000);
+
         try {
           const qrDataUrl = await QRCode.toDataURL(qr);
           entry.lastActivity = new Date();
@@ -106,6 +118,7 @@ export class WaSessionManager extends EventEmitter {
       }
 
       if (connection === 'close') {
+        if (qrTimeout) clearTimeout(qrTimeout);
         const boom = lastDisconnect?.error as Boom | undefined;
         const statusCode = boom?.output?.statusCode ?? 0;
         const reason = boom?.message ?? 'unknown';
@@ -121,6 +134,7 @@ export class WaSessionManager extends EventEmitter {
           entry.status = 'disconnected';
           config.onBanned?.();
           this.emit('banned', { sessionId, tenantId, reason });
+          sendAlert('critical', 'WhatsApp Session Banned', `Session \`${sessionId}\` (tenant: \`${tenantId}\`) was banned.\nStatus: ${statusCode}\nReason: ${reason}`).catch(() => {});
           this.sessions.delete(sessionId);
           return;
         }
@@ -144,6 +158,7 @@ export class WaSessionManager extends EventEmitter {
       }
 
       if (connection === 'open') {
+        if (qrTimeout) clearTimeout(qrTimeout);
         entry.status = 'connected';
         entry.lastActivity = new Date();
         entry.retryCount = 0;

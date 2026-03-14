@@ -2,7 +2,7 @@ import { Worker, Queue, Job } from 'bullmq';
 import { PrismaClient } from '@prisma/client';
 import { Redis as IORedis } from 'ioredis';
 import pino from 'pino';
-import { QUEUES, type DispatchJobData, isWithinDispatchWindow } from '@dispara/shared';
+import { QUEUES, type DispatchJobData, isWithinDispatchWindow, initMonitoring, sendAlert } from '@dispara/shared';
 import { spinText, applyAntiDetection, humanDelay, typingDuration, CircuitBreaker, canSendMessage } from '@dispara/dispatch-engine';
 import { getWaSessionManager } from '@dispara/wa-manager';
 
@@ -13,6 +13,12 @@ const redisClient = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379
 });
 const redis = redisClient as unknown as import('bullmq').ConnectionOptions;
 const waManager = getWaSessionManager();
+
+// Initialize monitoring with Telegram credentials
+initMonitoring({
+  telegramToken: process.env.TELEGRAM_BOT_TOKEN,
+  telegramChatId: process.env.TELEGRAM_CHAT_ID,
+});
 
 /** Per-session circuit breakers */
 const circuitBreakers = new Map<string, CircuitBreaker>();
@@ -151,6 +157,7 @@ async function processDispatchJob(job: Job<DispatchJobData>): Promise<void> {
     const circuitOpened = cb.recordFailure();
     if (circuitOpened) {
       logger.warn({ sessionId }, 'Circuit breaker OPENED — session paused for 1 hour');
+      sendAlert('critical', 'Circuit Breaker OPEN', `Session \`${sessionId}\` paused for 1 hour after repeated failures.\nDispatch: \`${dispatchId}\``).catch(() => {});
       // Update session health in DB
       await prisma.waSession.update({
         where: { id: sessionId },
@@ -225,6 +232,12 @@ async function checkDispatchComplete(dispatchId: string): Promise<void> {
 
   if (pending > 0) return; // Still processing
 
+  // Alert if failure rate exceeds 20%
+  const total = sent + failed;
+  if (total > 0 && failed / total > 0.2) {
+    sendAlert('warning', 'High Dispatch Failure Rate', `Dispatch \`${dispatchId}\`: ${failed}/${total} failed (${Math.round(failed / total * 100)}%)`).catch(() => {});
+  }
+
   let status: string;
   if (failed === 0) {
     status = 'COMPLETED';
@@ -274,6 +287,7 @@ async function moveToDeadLetter(job: Job<DispatchJobData>, error: string): Promi
       groupId: job.data.groupId,
       error,
     }, 'Job moved to DLQ after exhausting retries');
+    sendAlert('warning', 'Job moved to DLQ', `Dispatch \`${job.data.dispatchId}\`\nGroup: \`${job.data.groupId}\`\nError: ${error}\nAttempts: ${job.attemptsMade}`).catch(() => {});
   } catch (dlqErr) {
     logger.error({ jobId: job.id, dlqErr }, 'Failed to move job to DLQ');
   }
