@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import pino from 'pino';
 import { IntentClassifier } from './classifier.js';
+import { handleDisparar, handleStatus, type DispatchDeps, type StatusDeps } from './handlers.js';
 import { ProductRAG } from './rag.js';
 import { ConversationalResponder } from './responder.js';
 import type { AgentConfig, AgentInteraction, Intent } from './types.js';
@@ -30,17 +31,22 @@ export class AgentEngine {
   private responder: ConversationalResponder;
   private config: AgentConfig;
   private cooldowns: Map<string, CooldownEntry> = new Map();
+  private dispatchDeps?: DispatchDeps;
+  private statusDeps?: StatusDeps;
 
   constructor(
     classifier: IntentClassifier,
     rag: ProductRAG,
     responder: ConversationalResponder,
     config: AgentConfig,
+    deps?: { dispatchDeps?: DispatchDeps; statusDeps?: StatusDeps },
   ) {
     this.classifier = classifier;
     this.rag = rag;
     this.responder = responder;
     this.config = config;
+    this.dispatchDeps = deps?.dispatchDeps;
+    this.statusDeps = deps?.statusDeps;
   }
 
   async processMessage(
@@ -95,6 +101,27 @@ export class AgentEngine {
     if (!ACTIONABLE_INTENTS.includes(classification.intent)) {
       baseInteraction.responseTimeMs = Date.now() - startTime;
       return { response: null, interaction: baseInteraction };
+    }
+
+    // 5a. Handle disparar/status with real handlers if deps provided
+    if (classification.intent === 'disparar' && this.dispatchDeps) {
+      const responseText = await handleDisparar(this.config.tenantId, this.dispatchDeps);
+      const delay = this.calculateDelay();
+      await this.sleep(delay);
+      this.recordResponse(groupId);
+      baseInteraction.responseText = responseText;
+      baseInteraction.responseTimeMs = Date.now() - startTime;
+      return { response: responseText, interaction: baseInteraction };
+    }
+
+    if (classification.intent === 'status' && this.statusDeps) {
+      const responseText = await handleStatus(this.config.tenantId, this.statusDeps);
+      const delay = this.calculateDelay();
+      await this.sleep(delay);
+      this.recordResponse(groupId);
+      baseInteraction.responseText = responseText;
+      baseInteraction.responseTimeMs = Date.now() - startTime;
+      return { response: responseText, interaction: baseInteraction };
     }
 
     // 5. Search products via RAG only for product-related intents

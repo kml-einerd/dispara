@@ -1,5 +1,6 @@
 import pino from 'pino';
 import { IntentClassifier } from './classifier.js';
+import { handleDisparar, handleStatus, type DispatchDeps, type StatusDeps } from './handlers.js';
 import { ProductRAG, type ProductQueryFn } from './rag.js';
 import { ConversationalResponder } from './responder.js';
 import type { Intent } from './types.js';
@@ -23,6 +24,8 @@ export interface ProcessAgentMessageOptions {
     chatType: string;
   };
   productQueryFn?: ProductQueryFn;
+  dispatchDeps?: DispatchDeps;
+  statusDeps?: StatusDeps;
 }
 
 export interface ProcessAgentMessageResult {
@@ -73,7 +76,18 @@ export async function processAgentMessage(
     productIds = results.map((r) => r.product.id);
   }
 
-  // 3. Generate response
+  // 3a. Handle disparar/status with real handlers if deps provided
+  if (classification.intent === 'disparar' && opts.dispatchDeps) {
+    const text = await handleDisparar(tenantId, opts.dispatchDeps);
+    return { text, intent: classification.intent, confidence: classification.confidence, productIds };
+  }
+
+  if (classification.intent === 'status' && opts.statusDeps) {
+    const text = await handleStatus(tenantId, opts.statusDeps);
+    return { text, intent: classification.intent, confidence: classification.confidence, productIds };
+  }
+
+  // 3. Generate response (fallback to LLM/static for intents without handlers)
   const config = {
     tenantId,
     systemPrompt: agentConfig.systemPrompt ?? '',
