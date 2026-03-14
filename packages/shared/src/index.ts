@@ -1,4 +1,9 @@
 // ============================================
+// Crypto
+// ============================================
+export { encryptJSON, decryptJSON } from './crypto.js';
+
+// ============================================
 // Types
 // ============================================
 
@@ -257,6 +262,12 @@ export async function fetchWithTimeout(
     clearTimeout(timer);
   }
 }
+
+// ============================================
+// Monitoring
+// ============================================
+
+export { initMonitoring, sendAlert } from './monitoring.js';
 
 /** Check if current time is within dispatch window (BRT) */
 export function isWithinDispatchWindow(now: Date = new Date()): boolean {
