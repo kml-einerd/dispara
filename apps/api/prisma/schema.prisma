@@ -169,8 +169,9 @@ model Promo {
   originalPrice   Decimal          @map("original_price") @db.Decimal(10, 2)
   promoPrice      Decimal          @map("promo_price") @db.Decimal(10, 2)
   discountPercent Int              @map("discount_percent")
-  imageUrl        String?          @map("image_url")
-  category        String?          @db.VarChar(255)
+  imageUrl           String?          @map("image_url")
+  generatedImageUrl  String?          @map("generated_image_url")
+  category           String?          @db.VarChar(255)
   status          PromoStatus      @default(DRAFT)
   metadata        Json?
   createdAt       DateTime         @default(now()) @map("created_at")

@@ -1,11 +1,12 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { PromoService, NotFoundError } from './service.js';
+import { PromoService, NotFoundError, ServiceUnavailableError } from './service.js';
 import {
   createPromoSchema,
   listPromosSchema,
   updatePromoSchema,
   generateVariationsSchema,
   generateCopySchema,
+  generateImageSchema,
 } from './schemas.js';
 
 export async function promoRoutes(app: FastifyInstance): Promise<void> {
@@ -156,6 +157,56 @@ export async function promoRoutes(app: FastifyInstance): Promise<void> {
         }
       } finally {
         reply.raw.end();
+      }
+    },
+  );
+
+  // ── POST /v1/promos/:id/generate-image — Generate promo image with AI ──
+  app.post(
+    '/:id/generate-image',
+    {
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: '1 minute',
+          keyGenerator: (request: FastifyRequest) => request.tenantId,
+        },
+      },
+    },
+    async (
+      request: FastifyRequest<{ Params: { id: string } }>,
+      reply: FastifyReply,
+    ) => {
+      const input = generateImageSchema.parse(request.body ?? {});
+
+      try {
+        const result = await PromoService.generateImage(
+          request.tenantId,
+          request.params.id,
+          input,
+        );
+
+        reply.status(201).send(result);
+      } catch (err) {
+        if (err instanceof NotFoundError) {
+          reply.status(404).send({
+            error: { code: 'NOT_FOUND', message: err.message },
+          });
+          return;
+        }
+        if (err instanceof ServiceUnavailableError) {
+          reply.status(503).send({
+            error: { code: 'SERVICE_UNAVAILABLE', message: err.message },
+          });
+          return;
+        }
+        if ((err as Error).name === 'AbortError' || (err as any).code === 'TIMEOUT') {
+          reply.status(504).send({
+            error: { code: 'TIMEOUT', message: 'Image generation timed out' },
+          });
+          return;
+        }
+        throw err;
       }
     },
   );

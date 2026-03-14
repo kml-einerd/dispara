@@ -42,5 +42,21 @@ export const generateCopySchema = z.object({
     .optional(),
 });
 
+export const generateImageSchema = z.object({
+  style: z
+    .enum(['clean', 'bold', 'minimal', 'social', 'story'])
+    .default('clean'),
+  withText: z.boolean().default(true),
+  textOverlay: z
+    .object({
+      headline: z.string().max(100).optional(),
+      subtitle: z.string().max(200).optional(),
+      cta: z.string().max(50).optional(),
+    })
+    .optional(),
+  aspectRatio: z.enum(['1:1', '9:16', '16:9', '4:5']).default('1:1'),
+});
+
 export type GenerateVariationsInput = z.infer<typeof generateVariationsSchema>;
 export type GenerateCopyInput = z.infer<typeof generateCopySchema>;
+export type GenerateImageInput = z.infer<typeof generateImageSchema>;
