@@ -9,10 +9,26 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Button } from "../components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
+import { api } from "../lib/api";
+import { useNavigate } from "react-router-dom";
+import { useToast } from "../components/ui/use-toast";
 
 export function PromosPage() {
   const { data: promosData, mutate } = useSWR('/promos');
   const promos: Promo[] = promosData?.data || [];
+  const navigate = useNavigate();
+  const { toast } = useToast();
+
+  const handleDelete = async (promoId: string, promoName: string) => {
+    if (!confirm(`Excluir "${promoName}"? Esta ação não pode ser desfeita.`)) return;
+    try {
+      await api.delete(`/promos/${promoId}`);
+      toast({ title: "Promoção excluída", description: promoName });
+      mutate();
+    } catch {
+      toast({ title: "Erro ao excluir", description: "Tente novamente.", variant: "destructive" });
+    }
+  };
 
   return (
     <PullToRefresh onRefresh={() => mutate()}>
@@ -43,10 +59,10 @@ export function PromosPage() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem className="gap-2">
+                      <DropdownMenuItem className="gap-2" onClick={() => navigate(`/promos/nova?edit=${promo.id}`)}>
                         <Edit className="h-4 w-4" /> Editar
                       </DropdownMenuItem>
-                      <DropdownMenuItem className="gap-2 text-destructive">
+                      <DropdownMenuItem className="gap-2 text-destructive" onClick={() => handleDelete(promo.id, promo.productName)}>
                         <Trash2 className="h-4 w-4" /> Excluir
                       </DropdownMenuItem>
                     </DropdownMenuContent>

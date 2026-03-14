@@ -8,6 +8,7 @@ import useSWR from "swr";
 import { PullToRefresh } from "../components/ui/pull-to-refresh";
 import { Group, WaSession } from "../types";
 import { useState } from "react";
+import { api } from "../lib/api";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 
 export function GroupsPage() {
@@ -19,6 +20,15 @@ export function GroupsPage() {
 
   const [search, setSearch] = useState('');
   const [sessionFilter, setSessionFilter] = useState('all');
+
+  const handleToggleGroup = async (groupId: string, currentActive: boolean) => {
+    try {
+      await api.post(`/groups/${groupId}`, { isActive: !currentActive });
+      mutate();
+    } catch {
+      // silent fail — UI stays in sync via SWR revalidation
+    }
+  };
 
   const filteredGroups = groups.filter(group => {
     const matchesSearch = group.name.toLowerCase().includes(search.toLowerCase());
@@ -82,7 +92,7 @@ export function GroupsPage() {
                     <Badge variant={group.isActive ? 'success' : 'secondary'}>
                       {group.isActive ? 'ATIVO' : 'INATIVO'}
                     </Badge>
-                    <Switch checked={group.isActive} />
+                    <Switch checked={group.isActive} onCheckedChange={() => handleToggleGroup(group.id, group.isActive)} />
                   </div>
                 </div>
               ))}

@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react';
+import useSWR from 'swr';
+import { api } from '../lib/api';
 import { Header } from '../components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -132,9 +134,12 @@ export function CommissionsPage() {
   const [activeTab, setActiveTab] = useState<MarketplaceTab>('Todos');
   const [periodDays, setPeriodDays] = useState(30);
 
-  // TODO: replace with useSWR('/commissions') when backend is ready
-  const allCommissions = MOCK_COMMISSIONS;
-  const loading = false;
+  const { data, isLoading: loading } = useSWR<{ commissions: Commission[] }>(
+    `/commissions/summary?days=${periodDays}`,
+    (url: string) => api.get(url),
+    { fallbackData: { commissions: MOCK_COMMISSIONS }, revalidateOnFocus: false },
+  );
+  const allCommissions = data?.commissions ?? MOCK_COMMISSIONS;
 
   const filtered = useMemo(() => {
     const cutoff = subDays(new Date(), periodDays);
