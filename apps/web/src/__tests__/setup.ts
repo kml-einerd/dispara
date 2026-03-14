@@ -1,4 +1,10 @@
+// Ensure CJS React picks up development bundles (needed for React.act)
+process.env.NODE_ENV = 'test';
+
 import '@testing-library/jest-dom/vitest';
+
+// Enable React act() environment
+(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 // Mock import.meta.env
 Object.defineProperty(import.meta, 'env', {

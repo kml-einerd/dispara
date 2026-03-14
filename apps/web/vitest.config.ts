@@ -8,6 +8,7 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, '.'),
     },
+    conditions: ['development'],
   },
   test: {
     environment: 'jsdom',
