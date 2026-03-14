@@ -25,7 +25,7 @@
 
 ## Package Structure
 - apps/api: Fastify REST API + WebSocket gateway
-- apps/web: Next.js dashboard (App Router)
+- Frontend: frot-dispara (Vite + React 19) — projeto separado em /home/agdev/frot-dispara/
 - packages/shared: types, constants (queues, warmup schedule, dispatch windows)
 - packages/wa-manager: Baileys wrapper (session lifecycle, QR, typing simulation)
 - packages/dispatch-engine: anti-bloqueio (spintax, gaussian delay, circuit breaker, warmup, number pool)
