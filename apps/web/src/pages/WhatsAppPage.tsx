@@ -7,6 +7,8 @@ import { WaSession } from "../types";
 import { SessionCard } from "../components/whatsapp/SessionCard";
 import { useState } from "react";
 import { QRCodeModal } from "../components/whatsapp/QRCodeModal";
+import { api } from "../lib/api";
+import { toast } from "../components/ui/use-toast";
 
 export function WhatsAppPage() {
   const { data, mutate } = useSWR('/wa/sessions');
@@ -14,10 +16,25 @@ export function WhatsAppPage() {
 
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [creatingSession, setCreatingSession] = useState(false);
 
   const handleOpenQR = (id: string) => {
     setSelectedSessionId(id);
     setIsQRModalOpen(true);
+  };
+
+  const handleCreateSession = async () => {
+    setCreatingSession(true);
+    try {
+      const res = await api.post('/wa/sessions', { name: 'Session ' + Date.now() });
+      setSelectedSessionId(res.id);
+      setIsQRModalOpen(true);
+      mutate();
+    } catch {
+      toast({ title: 'Erro ao criar sessão', description: 'Tente novamente.', variant: 'destructive' });
+    } finally {
+      setCreatingSession(false);
+    }
   };
 
   return (
@@ -27,9 +44,9 @@ export function WhatsAppPage() {
 
       <div className="flex items-center justify-between px-4 sm:px-6">
         <h2 className="text-lg font-semibold">Suas Sessões</h2>
-        <Button className="min-h-[44px] gap-2">
+        <Button className="min-h-[44px] gap-2" onClick={handleCreateSession} disabled={creatingSession}>
           <Plus className="h-4 w-4" />
-          Nova Sessão
+          {creatingSession ? 'Criando...' : 'Nova Sessão'}
         </Button>
       </div>
 

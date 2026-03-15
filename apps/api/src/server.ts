@@ -24,7 +24,7 @@ import { errorHandler } from './middleware/error-handler.js';
 import { WebSocketGateway } from './plugins/websocket-gateway.js';
 import { prisma } from './lib/prisma.js';
 import { redis } from './lib/redis.js';
-import { getWaSessionManager } from '@dispara/wa-manager';
+import { getWaSessionManager, getBrowserTuple } from '@dispara/wa-manager';
 
 const app = Fastify({
   logger: {
@@ -86,6 +86,46 @@ waManager.on('banned', ({ sessionId, tenantId }) => {
     dailyMsgCount: 0,
   });
 });
+
+// ── Restore active WA sessions from DB ──
+const activeSessions = await prisma.waSession.findMany({
+  where: { status: 'CONNECTED' },
+});
+for (const session of activeSessions) {
+  try {
+    waManager.createSession({
+      sessionId: session.id,
+      tenantId: session.tenantId,
+      phoneNumber: session.phoneNumber,
+      prisma,
+      browserTuple: ((session.metadata as Record<string, unknown>)?.browserTuple as [string, string, string] | undefined) ?? getBrowserTuple(session.id),
+      onQR: async (qr) => {
+        await redis.set(`wa:qr:${session.id}`, qr, 'EX', 120).catch(() => {});
+      },
+      onConnected: async () => {
+        await prisma.waSession.update({
+          where: { id: session.id },
+          data: { lastConnAt: new Date() },
+        }).catch(() => {});
+      },
+      onDisconnected: async () => {
+        await prisma.waSession.update({
+          where: { id: session.id },
+          data: { status: 'DISCONNECTED' },
+        }).catch(() => {});
+      },
+      onBanned: async () => {
+        await prisma.waSession.update({
+          where: { id: session.id },
+          data: { status: 'BANNED', healthScore: 0 },
+        }).catch(() => {});
+      },
+    });
+    app.log.info({ sessionId: session.id }, 'Restored WA session from DB');
+  } catch (err) {
+    app.log.warn({ sessionId: session.id, err }, 'Failed to restore WA session');
+  }
+}
 
 // ── Global hooks ──
 app.addHook('onRequest', tenantMiddleware);

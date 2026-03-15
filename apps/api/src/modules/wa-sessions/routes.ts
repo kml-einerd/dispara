@@ -47,7 +47,7 @@ export async function waSessionRoutes(app: FastifyInstance): Promise<void> {
       browserTuple,
       onQR: async (qr) => {
         try {
-          await redis.set(`wa:qr:${sessionId}`, qr, 'EX', 60);
+          await redis.set(`wa:qr:${sessionId}`, qr, 'EX', 120);
         } catch (err) {
           request.log.error({ err, sessionId }, 'Failed to store QR in Redis');
         }
@@ -55,7 +55,11 @@ export async function waSessionRoutes(app: FastifyInstance): Promise<void> {
       onConnected: async () => {
         try {
           const sock = waManager.getSession(sessionId);
-          const phoneNumber = sock?.user?.id?.split(':')[0] ?? '';
+          let phoneNumber = sock?.user?.id?.split(':')[0] ?? '';
+          if (!phoneNumber) {
+            await new Promise(r => setTimeout(r, 2000));
+            phoneNumber = sock?.user?.id?.split(':')[0] ?? '';
+          }
           await prisma.waSession.update({
             where: { id: sessionId },
             data: {
@@ -100,12 +104,20 @@ export async function waSessionRoutes(app: FastifyInstance): Promise<void> {
           request.log.error({ err, sessionId }, 'Failed to update session on ban');
         }
       },
-    }).catch((err) => {
+    }).catch(async (err) => {
       request.log.error({ err, sessionId }, 'Failed to create Baileys session');
+      try {
+        await prisma.waSession.update({
+          where: { id: sessionId },
+          data: { status: 'DISCONNECTED', metadata: { browserTuple, connecting: false } },
+        });
+      } catch (dbErr) {
+        request.log.error({ dbErr, sessionId }, 'Failed to update session status after creation error');
+      }
     });
 
     reply.status(201).send({
-      sessionId,
+      id: sessionId,
       status: 'CONNECTING' as const,
     });
   });
@@ -203,7 +215,7 @@ export async function waSessionRoutes(app: FastifyInstance): Promise<void> {
     const meta = session.metadata as Record<string, unknown> | null;
 
     return {
-      sessionId: id,
+      id,
       qr: qr ?? null,
       status: meta?.connecting ? 'CONNECTING' : session.status,
     };

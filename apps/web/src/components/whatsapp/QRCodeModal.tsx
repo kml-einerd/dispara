@@ -67,10 +67,17 @@ export function QRCodeModal({ isOpen, onClose, sessionId, onConnected }: QRCodeM
                 </div>
               )}
             </div>
+          ) : status === 'CONNECTED' ? (
+            <div className="flex flex-col items-center gap-2 text-emerald-500">
+              <span className="font-bold">Conectado!</span>
+            </div>
           ) : (
-            <div className="text-center text-muted-foreground">
-              Não foi possível gerar o QR Code.
-              <Button variant="link" onClick={fetchQR}>Tentar novamente</Button>
+            <div className="flex flex-col items-center gap-3 text-center text-muted-foreground">
+              <p>QR expirado ou indisponível.</p>
+              <Button variant="outline" onClick={fetchQR}>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Gerar novo QR
+              </Button>
             </div>
           )}
         </div>
