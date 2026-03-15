@@ -18,19 +18,21 @@ export function DispatchesPage() {
   const dispatches: Dispatch[] = dispatchesData?.data || [];
   const promos: Promo[] = promosData?.data || [];
 
-  const statusIcons = {
+  const statusIcons: Record<string, typeof Clock> = {
     PENDING: Clock,
     PROCESSING: Loader2,
     COMPLETED: CheckCircle2,
     FAILED: AlertCircle,
+    CANCELLED: AlertCircle,
   };
 
-  const statusColors = {
+  const statusColors: Record<string, 'secondary' | 'default' | 'success' | 'destructive'> = {
     PENDING: 'secondary',
     PROCESSING: 'default',
     COMPLETED: 'success',
     FAILED: 'destructive',
-  } as const;
+    CANCELLED: 'secondary',
+  };
 
   return (
     <PullToRefresh onRefresh={() => mutateDispatches()}>
@@ -41,7 +43,7 @@ export function DispatchesPage() {
       <div className="flex flex-col gap-3 px-4 md:hidden">
         {dispatches.map((dispatch) => {
           const promo = promos.find(p => p.id === dispatch.promoId);
-          const StatusIcon = statusIcons[dispatch.status];
+          const StatusIcon = statusIcons[dispatch.status] || Clock;
           const pct = dispatch.totalGroups > 0 ? (dispatch.sentCount / dispatch.totalGroups) * 100 : 0;
 
           return (
@@ -97,7 +99,7 @@ export function DispatchesPage() {
                 <tbody className="divide-y divide-border/50">
                   {dispatches.map((dispatch) => {
                     const promo = promos.find(p => p.id === dispatch.promoId);
-                    const StatusIcon = statusIcons[dispatch.status];
+                    const StatusIcon = statusIcons[dispatch.status] || Clock;
 
                     return (
                       <tr key={dispatch.id} className="transition-colors hover:bg-accent/30 cursor-pointer" onClick={() => navigate(`/dispatches/${dispatch.id}`)}>
@@ -124,7 +126,7 @@ export function DispatchesPage() {
                             <div className="h-1.5 w-24 rounded-full bg-secondary overflow-hidden">
                               <div
                                 className="h-full bg-primary transition-all"
-                                style={{ width: `${(dispatch.sentCount / dispatch.totalGroups) * 100}%` }}
+                                style={{ width: `${dispatch.totalGroups > 0 ? (dispatch.sentCount / dispatch.totalGroups) * 100 : 0}%` }}
                               />
                             </div>
                             <span className="text-xs font-medium">{dispatch.sentCount}/{dispatch.totalGroups}</span>

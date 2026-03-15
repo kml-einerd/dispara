@@ -96,7 +96,8 @@ export function DashboardPage() {
   const totalSent = dispatches.reduce((acc, d) => acc + d.sentCount, 0);
   const totalFailed = dispatches.reduce((acc, d) => acc + d.failedCount, 0);
   const activeGroups = groups.filter(g => g.isActive).length;
-  const successRate = totalSent > 0 ? ((totalSent - totalFailed) / totalSent * 100).toFixed(1) : '0';
+  const totalAttempted = totalSent + totalFailed;
+  const successRate = totalAttempted > 0 ? (totalSent / totalAttempted * 100).toFixed(1) : '0';
 
   const chartData = buildChartData(dispatches);
 

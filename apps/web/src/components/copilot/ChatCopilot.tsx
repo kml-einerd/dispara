@@ -254,12 +254,8 @@ export function ChatCopilot() {
       role: 'assistant',
       content: { type: 'text', text: `Imagem gerada com sucesso! Ela sera anexada ao disparo automaticamente.` },
     });
-    // Store image URL for dispatch — future: pass to ChatDispatchConfirm
-    setMessages(prev => {
-      const copy = [...prev];
-      // Find the last dispatch content and attach image, or just note it
-      return copy;
-    });
+    // Update selectedProduct with the generated image URL for use in dispatch
+    setSelectedProduct(prev => prev ? { ...prev, imageUrl } : prev);
   }, [addMessage]);
 
 
