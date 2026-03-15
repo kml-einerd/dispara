@@ -39,12 +39,13 @@ REGRAS DE SPINTAX:
 - Spintax em posições DIFERENTES (início, meio, fim) — nunca todos agrupados
 
 VOCABULÁRIO-ÂNCORA (use pelo menos 3):
-corre, agora, acabou de cair, últimas unidades, não perca, vai acabar, preço histórico, só hoje
+corre, agora, acabou de cair, últimas unidades, não perca, vai acabar, preço histórico, só hoje, preço de banana, último dia, tá de graça
 
 ANTI-PATTERNS:
 - Nunca use "kit", "método", "produto" — parecem venda
 - Nunca liste 3+ benefícios em sequência — fica bloco chato
 - Nunca use markdown, hashtags ou formatação rica
+- NUNCA comece duas variações com a mesma palavra — varie sempre a abertura
 
 FORMATO:
 - Máximo 480 caracteres (com spintax expandido na versão mais longa)
@@ -90,12 +91,13 @@ REGRAS DE SPINTAX:
 - Spintax deve soar natural em TODAS as variações — teste mentalmente cada opção
 
 VOCABULÁRIO-ÂNCORA (use pelo menos 3):
-olha isso, tá valendo, achei, que preço, bom demais, não acredito, tá de graça
+olha isso, tá valendo, achei, que preço, bom demais, não acredito, tá de graça, achei demais, tá valendo muito, vale cada centavo
 
 ANTI-PATTERNS:
 - Nunca soe como vendedor ou influencer pago
 - Nunca use "oferta imperdível", "oportunidade única" — vocabulário de spam
 - Nunca use markdown, hashtags ou formatação rica
+- NUNCA comece duas variações com a mesma palavra — varie sempre a abertura
 
 FORMATO:
 - Máximo 480 caracteres
@@ -141,12 +143,13 @@ REGRAS DE SPINTAX:
 - Cada variação deve manter o tom profissional
 
 VOCABULÁRIO-ÂNCORA (use pelo menos 3):
-oferta verificada, preço promocional, economia de, confira, disponível, recomendação
+oferta verificada, preço promocional, economia de, confira, disponível, recomendação, custo-benefício, melhor preço registrado
 
 ANTI-PATTERNS:
 - Nunca use gírias ou linguagem coloquial
 - Nunca exagere ("preço insano", "absurdo") — perde credibilidade
 - Nunca use markdown, hashtags ou formatação rica
+- NUNCA comece duas variações com a mesma palavra — varie sempre a abertura
 
 FORMATO:
 - Máximo 480 caracteres
@@ -193,12 +196,13 @@ REGRAS DE SPINTAX:
 - Cada variação deve fazer a pessoa sorrir ou reagir
 
 VOCABULÁRIO-ÂNCORA (use pelo menos 3):
-para tudo, tô chocada, socorro, não é possível, de graça, meu deus, bora, partiu
+para tudo, tô chocada, socorro, não é possível, de graça, meu deus, bora, partiu, meu cartão que lute, se não comprar tá perdendo, eu mereço, pega logo
 
 ANTI-PATTERNS:
 - Nunca perca o dado concreto no meio da diversão (preço e desconto DEVEM aparecer)
 - Nunca use humor que deprecie o produto
 - Nunca use markdown, hashtags ou formatação rica
+- NUNCA comece duas variações com a mesma palavra — varie sempre a abertura
 
 FORMATO:
 - Máximo 480 caracteres
@@ -243,12 +247,13 @@ REGRAS DE SPINTAX:
 - Cada variação deve criar sensação diferente de "vou perder se não agir"
 
 VOCABULÁRIO-ÂNCORA (use pelo menos 3):
-últimas unidades, acabando, limitado, quando acabar acabou, exclusivo, não volta, esgotando
+últimas unidades, acabando, limitado, quando acabar acabou, exclusivo, não volta, esgotando, promoção relâmpago, só enquanto durar, corre antes que acabe
 
 ANTI-PATTERNS:
 - Nunca use escassez falsa ("ÚLTIMAS HORAS" sem evidência)
 - Nunca combine escassez com tom casual — perde força
 - Nunca use markdown, hashtags ou formatação rica
+- NUNCA comece duas variações com a mesma palavra — varie sempre a abertura
 
 FORMATO:
 - Máximo 480 caracteres
@@ -422,8 +427,15 @@ Desconto: ${product.discountPercent}%
 Economia: ${this.formatBRL(savings)}
 Categoria: ${product.category ?? 'Geral'}
 Marketplace: ${product.marketplace}${product.rating ? `\nAvaliacao: ${product.rating}/5` : ''}${product.soldCount ? `\nVendidos: ${product.soldCount.toLocaleString('pt-BR')}+` : ''}
+Link: {{LINK_AFILIADO}}
 
-Gere a copy promocional com spintax embutido. Use pelo menos 4 blocos {opcao1|opcao2|opcao3}.
+INSTRUÇÕES DE SPINTAX:
+- Use {opção1|opção2|opção3} para criar variações — MÍNIMO 4 blocos
+- Distribua os blocos em posições DIFERENTES: abertura, meio e CTA final
+- Varie: saudação/reação, adjetivos do produto, formatação de preço, chamada para ação
+- NUNCA use a mesma abertura em variações diferentes
+- Inclua {{LINK_AFILIADO}} no final da copy (será substituído pelo link real)
+
 Responda APENAS com o texto da copy, sem JSON, sem markdown, sem explicacao.`;
   }
 
